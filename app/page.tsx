@@ -133,6 +133,13 @@ type ArcGISSceneAttributes = DetailedHTMLProps<
   "quality-profile"?: "low" | "medium" | "high";
 };
 
+type ArcGISBasemapGalleryAttributes = DetailedHTMLProps<
+  HTMLAttributes<HTMLElement>,
+  HTMLElement
+> & {
+  label?: string;
+};
+
 declare global {
   interface Window {
     $arcgis?: {
@@ -409,17 +416,25 @@ export default function Home() {
   return (
     <main className="app-shell">
       <div className="map-stage" aria-label="Interactive 3D map">
-        {createElement("arcgis-scene", {
-          ref: sceneElementRef,
-          className: "map-view",
-          suppressHydrationWarning: true,
-          basemap: "dark-gray-vector",
-          ground: "world-elevation",
-          "camera-position": "-66.65, -15.8, 1080000",
-          "camera-heading": "6",
-          "camera-tilt": "43",
-          "quality-profile": "high",
-        } as ArcGISSceneAttributes)}
+        {createElement(
+          "arcgis-scene",
+          {
+            ref: sceneElementRef,
+            className: "map-view",
+            suppressHydrationWarning: true,
+            basemap: "satellite",
+            ground: "world-elevation",
+            "camera-position": "-66.65, -15.8, 1080000",
+            "camera-heading": "6",
+            "camera-tilt": "43",
+            "quality-profile": "high",
+          } as ArcGISSceneAttributes,
+          createElement("arcgis-basemap-gallery", {
+            slot: "top-right",
+            label: "Choose a basemap",
+            suppressHydrationWarning: true,
+          } as ArcGISBasemapGalleryAttributes),
+        )}
         <div className={`map-wash ${loadState === "ready" ? "is-hidden" : ""}`} />
 
         <div className="map-label" aria-hidden="true">
