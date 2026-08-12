@@ -16,6 +16,9 @@ test("uses the existing imagery example as the only experimental ground source",
   assert.match(page, /url: SWISS_ALTI_COG\.url/);
   assert.match(adapter, /url: SWISS_ALTI_COG\.url/);
   assert.match(page, /layers: \[terrainLayer\]/);
-  assert.match(page, /ground\.queryElevation\(centerPoint\)/);
+  assert.match(page, /terrainLayer\.auditNativeCoverage/);
+  assert.match(adapter, /serviceRasterInfo/);
+  assert.match(adapter, /metadata\.width/);
+  assert.match(adapter, /metadata\.nativeResolution/);
   assert.doesNotMatch(adapter, /catalog|mosaic|world-elevation|projectOperator/i);
 });

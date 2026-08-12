@@ -50,5 +50,6 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.match(adapter, /ImageryTileLayer/);
   assert.match(adapter, /fetchPixels/);
   assert.match(page, /Ground validation/);
-  assert.match(page, /Ground verified/);
+  assert.match(page, /Full COG ground verified/);
+  assert.doesNotMatch(page, /queryElevation|center elevation/i);
 });

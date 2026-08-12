@@ -12,8 +12,10 @@ import {
   useState,
 } from "react";
 import {
+  createElevationLods,
   createSwissAltiElevationLayer,
-  type TerrainDiagnostic,
+  prepareSwissAltiSource,
+  type SwissAltiElevationLayer,
 } from "./swissAltiElevation";
 import {
   SWISS_ALTI_CELL_SIZE_METERS,
@@ -171,14 +173,6 @@ declare global {
   }
 }
 
-const TERRAIN_LODS = [32, 16, 8, 4, 2, 1, 0.5].map(
-  (resolution, level) => ({
-    level,
-    resolution,
-    scale: resolution * 96 * 39.37,
-  }),
-);
-
 function waitForArcGIS(timeout = 20000) {
   return new Promise<void>((resolve, reject) => {
     if (window.$arcgis) {
@@ -233,9 +227,7 @@ export default function Home() {
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
-  const terrainLayerRef = useRef<
-    (ArcGISObject & { disposeSource?: () => void }) | null
-  >(null);
+  const terrainLayerRef = useRef<SwissAltiElevationLayer | null>(null);
   const terrainExtentRef = useRef<ArcGISObject | null>(null);
   const layerConstructorRef = useRef<ArcGISConstructor | null>(null);
   const sceneGenerationRef = useRef(0);
@@ -258,8 +250,10 @@ export default function Home() {
   const [terrainValidation, setTerrainValidation] = useState({
     source: "Pending",
     groundLayers: "—",
-    centerElevation: "—",
-    tileSamples: "—",
+    coverage: "—",
+    elevationRange: "—",
+    sourcePixels: "—",
+    terrainSamples: "—",
   });
   const [opacity, setOpacity] = useState(88);
   const [visible, setVisible] = useState(true);
@@ -479,8 +473,10 @@ export default function Home() {
       setTerrainValidation({
         source: "Loading",
         groundLayers: "—",
-        centerElevation: "—",
-        tileSamples: "—",
+        coverage: "—",
+        elevationRange: "—",
+        sourcePixels: "—",
+        terrainSamples: "—",
       });
 
       const [
@@ -511,11 +507,19 @@ export default function Home() {
         ArcGISConstructor,
       ];
 
-      const spatialReference = new SpatialReference({
-        wkid: SWISS_ALTI_HORIZONTAL_WKID,
-      });
+      const preparedSource = await prepareSwissAltiSource(
+        ImageryTileLayer,
+        abortController.signal,
+      );
+      if (!isCurrent()) {
+        preparedSource.layer.destroy?.();
+        return;
+      }
+      const { metadata } = preparedSource;
+      const lods = createElevationLods(metadata);
+      const spatialReference = new SpatialReference({ wkid: SWISS_ALTI_HORIZONTAL_WKID });
       const fullExtent = new Extent({
-        ...SWISS_ALTI_COG.extent,
+        ...metadata.extent,
         spatialReference,
       });
       const tileInfo = new TileInfo({
@@ -524,45 +528,27 @@ export default function Home() {
         spatialReference,
         size: [256, 256],
         origin: new Point({
-          x: SWISS_ALTI_COG.extent.xmin,
-          y: SWISS_ALTI_COG.extent.ymax,
+          x: metadata.extent.xmin,
+          y: metadata.extent.ymax,
           spatialReference,
         }),
-        lods: TERRAIN_LODS,
+        lods,
       });
-
-      const onDiagnostic = (diagnostic: TerrainDiagnostic) => {
-        if (!isCurrent()) return;
-        if (diagnostic.type === "source-ready") {
-          setTerrainValidation((current) => ({
-            ...current,
-            source: "EPSG:2056 verified",
-          }));
-          setTerrainStatus(diagnostic.message);
-        } else if (diagnostic.type === "tile-ready") {
-          setTerrainValidation((current) => ({
-            ...current,
-            tileSamples: diagnostic.validSampleCount.toLocaleString(),
-          }));
-          setTerrainStatus(diagnostic.message);
-        } else if (diagnostic.type === "tile-empty") {
-          setTerrainValidation((current) => ({
-            ...current,
-            tileSamples: "No data",
-          }));
-          setTerrainStatus(diagnostic.message);
-        } else {
-          setTerrainState("error");
-          setTerrainStatus(diagnostic.message);
-        }
-      };
+      setTerrainValidation((current) => ({
+        ...current,
+        source: `${metadata.width.toLocaleString()}×${metadata.height.toLocaleString()} · EPSG:2056`,
+        sourcePixels: (metadata.width * metadata.height).toLocaleString(),
+      }));
+      setTerrainStatus(
+        `COG metadata verified · ${metadata.nativeResolution} m native pixels`,
+      );
 
       const terrainLayer = createSwissAltiElevationLayer({
         BaseElevationLayer,
         Extent,
-        ImageryTileLayer,
         fullExtent,
-        onDiagnostic,
+        lods,
+        preparedSource,
         spatialReference,
         tileInfo,
       });
@@ -582,12 +568,7 @@ export default function Home() {
         opacity: 1,
         surfaceColor: "#d6ddc7",
         navigationConstraint: { type: "stay-above" },
-      }) as ArcGISObject & {
-        layers?: { length?: number };
-        queryElevation?: (geometry: ArcGISObject) => Promise<{
-          geometry?: { z?: number };
-        }>;
-      };
+      }) as ArcGISObject & { layers?: { length?: number } };
       sceneElement.map.ground = ground;
 
       terrainLayerRef.current = terrainLayer;
@@ -620,32 +601,6 @@ export default function Home() {
 
       mapRef.current = sceneElement.map;
       viewRef.current = sceneElement.view;
-      const centerX =
-        (SWISS_ALTI_COG.extent.xmin + SWISS_ALTI_COG.extent.xmax) / 2;
-      const centerY =
-        (SWISS_ALTI_COG.extent.ymin + SWISS_ALTI_COG.extent.ymax) / 2;
-      const centerPoint = new Point({
-        x: centerX,
-        y: centerY,
-        spatialReference,
-      });
-
-      if (!ground.queryElevation) {
-        throw new Error("Ground elevation queries are unavailable.");
-      }
-      const sample = await ground.queryElevation(centerPoint);
-      const centerElevation = sample.geometry?.z;
-      if (!Number.isFinite(centerElevation)) {
-        throw new Error("The ground returned no elevation at the COG center.");
-      }
-      setTerrainValidation((current) => ({
-        ...current,
-        centerElevation: `${centerElevation!.toFixed(1)} m`,
-      }));
-      setTerrainState("ready");
-      setTerrainStatus(
-        `Ground verified · center elevation ${centerElevation!.toFixed(1)} m`,
-      );
 
       const view = sceneElement.view as ArcGISObject & {
         goTo?: (target: unknown, options?: unknown) => Promise<void>;
@@ -659,6 +614,33 @@ export default function Home() {
       } catch {
         // Navigation cancellation is expected when the user moves the camera.
       }
+
+      setTerrainStatus("Auditing every native-resolution ground tile…");
+      const audit = await terrainLayer.auditNativeCoverage({
+        signal: abortController.signal,
+        onProgress: (completed, total) => {
+          if (!isCurrent()) return;
+          setTerrainValidation((current) => ({
+            ...current,
+            coverage: `${completed}/${total} tiles`,
+          }));
+          setTerrainStatus(
+            `Validating complete COG coverage · ${completed}/${total} native tiles`,
+          );
+        },
+      });
+      if (!isCurrent()) return;
+
+      setTerrainValidation((current) => ({
+        ...current,
+        coverage: `${audit.completedTiles}/${audit.totalTiles} tiles`,
+        elevationRange: `${audit.elevationMin.toFixed(1)}–${audit.elevationMax.toFixed(1)} m`,
+        terrainSamples: `${audit.validSampleCount.toLocaleString()} / ${audit.expectedSampleCount.toLocaleString()}`,
+      }));
+      setTerrainState("ready");
+      setTerrainStatus(
+        `Full COG ground verified · ${audit.totalTiles} native tiles complete`,
+      );
     };
 
     const initialize = async () => {
@@ -1038,7 +1020,8 @@ export default function Home() {
               </div>
               <p>
                 A custom elevation adapter turns this exact COG into the sole
-                ArcGIS ground layer. Readiness requires a valid center elevation.
+                ArcGIS ground layer. Readiness requires every native-resolution
+                ground tile across the complete raster footprint to pass.
               </p>
               <div className="terrain-facts">
                 <div><span>View</span><strong>Local</strong></div>
@@ -1070,9 +1053,11 @@ export default function Home() {
               </div>
               <dl>
                 <div><dt>COG source</dt><dd>{terrainValidation.source}</dd></div>
+                <div><dt>Source pixels</dt><dd>{terrainValidation.sourcePixels}</dd></div>
                 <div><dt>Ground layers</dt><dd>{terrainValidation.groundLayers}</dd></div>
-                <div><dt>Center elevation</dt><dd>{terrainValidation.centerElevation}</dd></div>
-                <div><dt>Valid tile samples</dt><dd>{terrainValidation.tileSamples}</dd></div>
+                <div><dt>Native coverage</dt><dd>{terrainValidation.coverage}</dd></div>
+                <div><dt>Terrain samples</dt><dd>{terrainValidation.terrainSamples}</dd></div>
+                <div><dt>Elevation range</dt><dd>{terrainValidation.elevationRange}</dd></div>
               </dl>
             </section>
 
