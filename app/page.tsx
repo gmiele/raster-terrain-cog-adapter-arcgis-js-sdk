@@ -11,9 +11,19 @@ import {
   useRef,
   useState,
 } from "react";
+import { createSwissAltiElevationLayer } from "./swissAltiElevation";
+import {
+  loadSwissAltiCatalog,
+  SWISS_ALTI_CELL_SIZE_METERS,
+  SWISS_ALTI_HORIZONTAL_WKID,
+  SWISS_ALTI_VERTICAL_WKID,
+} from "./swissAltiCatalog";
 
 const DEMO_COG_URL =
   "https://ss6imagery.arcgisonline.com/imagery_sample/landsat8/Bolivia_LC08_L1TP_001069_20190719_MS.tiff";
+
+type AppMode = "imagery" | "terrain";
+type LoadState = "starting" | "loading" | "ready" | "error";
 
 type ExampleDataset = {
   id: string;
@@ -96,8 +106,6 @@ const EXAMPLE_GROUPS: ExampleDataset["group"][] = [
   "Specialized rasters",
 ];
 
-type LoadState = "starting" | "loading" | "ready" | "error";
-
 type RasterDetails = {
   name: string;
   host: string;
@@ -110,15 +118,18 @@ type ArcGISObject = Record<string, unknown> & {
 };
 
 type ArcGISConstructor = new (
-  options: Record<string, unknown>,
+  options?: Record<string, unknown>,
 ) => ArcGISObject;
 
 type ArcGISSceneElement = HTMLElement & {
   componentOnReady: () => Promise<ArcGISSceneElement>;
   viewOnReady: () => Promise<void>;
-  map?: ArcGISObject | null;
-  view?: ArcGISObject;
+  clippingArea?: ArcGISObject;
   environment?: Record<string, unknown>;
+  map?: ArcGISObject | null;
+  spatialReference?: ArcGISObject;
+  view?: ArcGISObject;
+  viewingMode?: "global" | "local";
 };
 
 type ArcGISSceneAttributes = DetailedHTMLProps<
@@ -127,6 +138,8 @@ type ArcGISSceneAttributes = DetailedHTMLProps<
 > & {
   basemap?: string;
   ground?: string;
+  spatialReference?: { wkid: number };
+  "viewing-mode"?: "global" | "local";
   "camera-position"?: string;
   "camera-heading"?: string;
   "camera-tilt"?: string;
@@ -150,12 +163,18 @@ type ArcGISExpandAttributes = DetailedHTMLProps<
 declare global {
   interface Window {
     $arcgis?: {
-      import: (
-        modules: string | string[],
-      ) => Promise<ArcGISConstructor | ArcGISConstructor[]>;
+      import: (modules: string | string[]) => Promise<unknown>;
     };
   }
 }
+
+const TERRAIN_LODS = [32, 16, 8, 4, 2, 1, 0.5].map(
+  (resolution, level) => ({
+    level,
+    resolution,
+    scale: resolution * 96 * 39.37,
+  }),
+);
 
 function waitForArcGIS(timeout = 20000) {
   return new Promise<void>((resolve, reject) => {
@@ -191,19 +210,49 @@ function getHost(url: string) {
   }
 }
 
+function sceneEnvironment(local: boolean) {
+  return {
+    atmosphereEnabled: !local,
+    starsEnabled: false,
+    background: local
+      ? { type: "color", color: [229, 232, 222, 1] }
+      : undefined,
+    lighting: {
+      directShadowsEnabled: true,
+      ambientOcclusionEnabled: true,
+      date: new Date("2025-07-19T15:00:00Z"),
+    },
+  };
+}
+
 export default function Home() {
   const sceneElementRef = useRef<ArcGISSceneElement>(null);
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
-  const layerRef = useRef<ArcGISObject | null>(null);
+  const imageryLayerRef = useRef<ArcGISObject | null>(null);
+  const terrainLayerRef = useRef<
+    (ArcGISObject & { disposeSources?: () => void }) | null
+  >(null);
+  const terrainExtentRef = useRef<ArcGISObject | null>(null);
   const layerConstructorRef = useRef<ArcGISConstructor | null>(null);
+  const sceneGenerationRef = useRef(0);
+  const loadRequestRef = useRef(0);
+  const activeUrlRef = useRef(DEMO_COG_URL);
+  const modeRef = useRef<AppMode>("imagery");
   const opacityRef = useRef(88);
 
+  const [sdkReady, setSdkReady] = useState(false);
+  const [mode, setMode] = useState<AppMode>("imagery");
   const [cogUrl, setCogUrl] = useState(DEMO_COG_URL);
   const [activeUrl, setActiveUrl] = useState(DEMO_COG_URL);
   const [selectedExampleId, setSelectedExampleId] = useState("bolivia-landsat");
   const [loadState, setLoadState] = useState<LoadState>("starting");
   const [statusText, setStatusText] = useState("Preparing 3D scene…");
+  const [terrainState, setTerrainState] = useState<LoadState>("starting");
+  const [terrainStatus, setTerrainStatus] = useState(
+    "Preparing local EPSG:2056 scene…",
+  );
+  const [terrainTileCount, setTerrainTileCount] = useState(0);
   const [opacity, setOpacity] = useState(88);
   const [visible, setVisible] = useState(true);
   const [details, setDetails] = useState<RasterDetails>({
@@ -213,18 +262,17 @@ export default function Home() {
     spatialReference: "Detecting…",
   });
 
-  const frameLayer = useCallback(async () => {
+  const frameImagery = useCallback(async () => {
     const view = viewRef.current as
       | (ArcGISObject & {
           goTo?: (target: unknown, options?: unknown) => Promise<void>;
         })
       | null;
-    const layer = layerRef.current as
+    const layer = imageryLayerRef.current as
       | (ArcGISObject & { fullExtent?: { expand?: (factor: number) => unknown } })
       | null;
 
     if (!view?.goTo || !layer?.fullExtent) return;
-
     const target = layer.fullExtent.expand
       ? layer.fullExtent.expand(1.55)
       : layer.fullExtent;
@@ -236,8 +284,32 @@ export default function Home() {
     }
   }, []);
 
+  const frameTerrain = useCallback(async () => {
+    const view = viewRef.current as
+      | (ArcGISObject & {
+          goTo?: (target: unknown, options?: unknown) => Promise<void>;
+        })
+      | null;
+    if (!view?.goTo || !terrainExtentRef.current) return;
+
+    try {
+      await view.goTo(
+        {
+          target: terrainExtentRef.current,
+          tilt: 58,
+          heading: 318,
+        },
+        { duration: 1300, easing: "ease-in-out" },
+      );
+    } catch {
+      // Navigation cancellation is expected when the user moves the camera.
+    }
+  }, []);
+
   const loadCog = useCallback(
     async (url: string) => {
+      if (modeRef.current !== "imagery") return;
+      const requestId = ++loadRequestRef.current;
       const ImageryTileLayer = layerConstructorRef.current;
       const map = mapRef.current as
         | (ArcGISObject & {
@@ -247,14 +319,13 @@ export default function Home() {
         | null;
 
       if (!ImageryTileLayer || !map) return;
-
       setLoadState("loading");
       setStatusText("Reading GeoTIFF header and tiles…");
 
-      if (layerRef.current) {
-        map.remove?.(layerRef.current);
-        layerRef.current.destroy?.();
-        layerRef.current = null;
+      if (imageryLayerRef.current) {
+        map.remove?.(imageryLayerRef.current);
+        imageryLayerRef.current.destroy?.();
+        imageryLayerRef.current = null;
       }
 
       const example = EXAMPLE_DATASETS.find((dataset) => dataset.url === url);
@@ -266,13 +337,22 @@ export default function Home() {
         ...(example?.bandIds ? { bandIds: example.bandIds } : {}),
       });
 
-      layerRef.current = layer;
+      imageryLayerRef.current = layer;
       map.add?.(layer);
       setVisible(true);
 
       try {
         const load = layer.load as (() => Promise<ArcGISObject>) | undefined;
         if (load) await load.call(layer);
+
+        if (
+          requestId !== loadRequestRef.current ||
+          modeRef.current !== "imagery"
+        ) {
+          map.remove?.(layer);
+          layer.destroy?.();
+          return;
+        }
 
         const rasterInfo = (layer.serviceRasterInfo ?? layer.rasterInfo ?? {}) as {
           bandCount?: number;
@@ -292,7 +372,9 @@ export default function Home() {
         setDetails({
           name: example?.label ?? fileName,
           host: getHost(url),
-          bands: bandCount ? `${bandCount} band${bandCount === 1 ? "" : "s"}` : "Auto bands",
+          bands: bandCount
+            ? `${bandCount} band${bandCount === 1 ? "" : "s"}`
+            : "Auto bands",
           spatialReference: spatialReference?.latestWkid
             ? `EPSG:${spatialReference.latestWkid}`
             : spatialReference?.wkid
@@ -302,59 +384,233 @@ export default function Home() {
         setActiveUrl(url);
         setLoadState("ready");
         setStatusText("COG connected · tiles streaming");
-        await frameLayer();
+        await frameImagery();
       } catch (error) {
+        if (
+          requestId !== loadRequestRef.current ||
+          modeRef.current !== "imagery"
+        ) {
+          return;
+        }
         map.remove?.(layer);
         layer.destroy?.();
-        layerRef.current = null;
+        imageryLayerRef.current = null;
         setLoadState("error");
         setStatusText(
           `${getErrorMessage(error)} Check that the URL is public, CORS-enabled, and supports byte-range requests.`,
         );
       }
     },
-    [frameLayer],
+    [frameImagery],
   );
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    activeUrlRef.current = activeUrl;
+  }, [activeUrl]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const initialize = async () => {
+    const prepareSdk = async () => {
       try {
         await waitForArcGIS();
         await window.customElements.whenDefined("arcgis-scene");
-        if (cancelled || !sceneElementRef.current || !window.$arcgis) return;
-
-        const ImageryTileLayer = (await window.$arcgis.import(
-          "@arcgis/core/layers/ImageryTileLayer.js",
-        )) as ArcGISConstructor;
-
-        if (cancelled) return;
-
-        const sceneElement = sceneElementRef.current;
-        await sceneElement.componentOnReady();
-        sceneElement.environment = {
-          atmosphereEnabled: true,
-          starsEnabled: false,
-          lighting: {
-            directShadowsEnabled: true,
-            date: new Date("2025-07-19T15:00:00Z"),
-          },
-        };
-        await sceneElement.viewOnReady();
-
-        if (cancelled || !sceneElement.map || !sceneElement.view) return;
-
-        mapRef.current = sceneElement.map;
-        viewRef.current = sceneElement.view;
-        layerConstructorRef.current = ImageryTileLayer;
-
-        if (!cancelled) await loadCog(DEMO_COG_URL);
+        if (!cancelled) setSdkReady(true);
       } catch (error) {
         if (cancelled) return;
-        console.error("ArcGIS scene initialization failed", error);
+        const message = getErrorMessage(error);
         setLoadState("error");
-        setStatusText(getErrorMessage(error));
+        setTerrainState("error");
+        setStatusText(message);
+        setTerrainStatus(message);
+      }
+    };
+
+    void prepareSdk();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sdkReady) return;
+
+    let cancelled = false;
+    const abortController = new AbortController();
+    const generation = ++sceneGenerationRef.current;
+    const isCurrent = () =>
+      !cancelled && generation === sceneGenerationRef.current;
+
+    const initializeImagery = async (sceneElement: ArcGISSceneElement) => {
+      setLoadState("starting");
+      setStatusText("Preparing global imagery scene…");
+
+      const ImageryTileLayer = (await window.$arcgis!.import(
+        "@arcgis/core/layers/ImageryTileLayer.js",
+      )) as ArcGISConstructor;
+      if (!isCurrent()) return;
+
+      await sceneElement.componentOnReady();
+      sceneElement.environment = sceneEnvironment(false);
+      await sceneElement.viewOnReady();
+      if (!isCurrent() || !sceneElement.map || !sceneElement.view) return;
+
+      mapRef.current = sceneElement.map;
+      viewRef.current = sceneElement.view;
+      layerConstructorRef.current = ImageryTileLayer;
+      await loadCog(activeUrlRef.current);
+    };
+
+    const initializeTerrain = async (sceneElement: ArcGISSceneElement) => {
+      setTerrainState("loading");
+      setTerrainStatus("Validating the SwissALTI COG catalog…");
+
+      const [
+        BaseElevationLayer,
+        Extent,
+        Ground,
+        ImageryTileLayer,
+        Point,
+        SpatialReference,
+        TileInfo,
+      ] = (await window.$arcgis!.import([
+        "@arcgis/core/layers/BaseElevationLayer.js",
+        "@arcgis/core/geometry/Extent.js",
+        "@arcgis/core/Ground.js",
+        "@arcgis/core/layers/ImageryTileLayer.js",
+        "@arcgis/core/geometry/Point.js",
+        "@arcgis/core/geometry/SpatialReference.js",
+        "@arcgis/core/layers/support/TileInfo.js",
+      ])) as [
+        ArcGISConstructor & {
+          createSubclass: (definition: Record<string, unknown>) => ArcGISConstructor;
+        },
+        ArcGISConstructor,
+        ArcGISConstructor,
+        ArcGISConstructor,
+        ArcGISConstructor,
+        ArcGISConstructor,
+        ArcGISConstructor,
+      ];
+
+      const catalog = await loadSwissAltiCatalog(abortController.signal);
+      if (!isCurrent()) return;
+      setTerrainTileCount(catalog.tiles.length);
+
+      const spatialReference = new SpatialReference({
+        wkid: SWISS_ALTI_HORIZONTAL_WKID,
+      });
+      const fullExtent = new Extent({
+        ...catalog.extent,
+        spatialReference,
+      });
+      const tileInfo = new TileInfo({
+        dpi: 96,
+        format: "lerc",
+        spatialReference,
+        size: [256, 256],
+        origin: new Point({
+          x: catalog.extent.xmin,
+          y: catalog.extent.ymax,
+          spatialReference,
+        }),
+        lods: TERRAIN_LODS,
+      });
+
+      const terrainLayer = createSwissAltiElevationLayer({
+        BaseElevationLayer,
+        Extent,
+        ImageryTileLayer,
+        catalog,
+        fullExtent,
+        spatialReference,
+        tileInfo,
+      });
+
+      await sceneElement.componentOnReady();
+      if (!isCurrent() || !sceneElement.map) return;
+      sceneElement.environment = sceneEnvironment(true);
+      sceneElement.clippingArea = fullExtent;
+      sceneElement.map.ground = new Ground({
+        layers: [terrainLayer],
+        opacity: 1,
+        surfaceColor: "#d6ddc7",
+        navigationConstraint: { type: "stay-above" },
+      });
+
+      terrainLayerRef.current = terrainLayer;
+      terrainExtentRef.current = fullExtent;
+      setTerrainStatus("Connecting local terrain tiles…");
+      await sceneElement.viewOnReady();
+      if (!isCurrent() || !sceneElement.map || !sceneElement.view) return;
+
+      const viewSpatialReference = sceneElement.view.spatialReference as
+        | { wkid?: number; latestWkid?: number }
+        | undefined;
+      const wkid =
+        viewSpatialReference?.latestWkid ?? viewSpatialReference?.wkid;
+      const viewingMode = sceneElement.view.viewingMode as string | undefined;
+
+      if (wkid !== SWISS_ALTI_HORIZONTAL_WKID || viewingMode !== "local") {
+        throw new Error(
+          `Local terrain scene initialized as ${viewingMode ?? "unknown"} / EPSG:${wkid ?? "unknown"}.`,
+        );
+      }
+
+      mapRef.current = sceneElement.map;
+      viewRef.current = sceneElement.view;
+      setTerrainState("ready");
+      setTerrainStatus(
+        `${catalog.tiles.length} SwissALTI COGs · local EPSG:2056 terrain ready`,
+      );
+
+      const centerX = (catalog.extent.xmin + catalog.extent.xmax) / 2;
+      const centerY = (catalog.extent.ymin + catalog.extent.ymax) / 2;
+      const initialExtent = new Extent({
+        xmin: centerX - 3800,
+        ymin: centerY - 3000,
+        xmax: centerX + 3800,
+        ymax: centerY + 3000,
+        spatialReference,
+      });
+      const view = sceneElement.view as ArcGISObject & {
+        goTo?: (target: unknown, options?: unknown) => Promise<void>;
+      };
+
+      try {
+        await view.goTo?.(
+          { target: initialExtent, tilt: 62, heading: 318 },
+          { duration: 1200, easing: "ease-in-out" },
+        );
+      } catch {
+        // Navigation cancellation is expected when the user moves the camera.
+      }
+    };
+
+    const initialize = async () => {
+      const sceneElement = sceneElementRef.current;
+      if (!sceneElement || !window.$arcgis) return;
+
+      try {
+        if (mode === "imagery") {
+          await initializeImagery(sceneElement);
+        } else {
+          await initializeTerrain(sceneElement);
+        }
+      } catch (error) {
+        if (!isCurrent() || abortController.signal.aborted) return;
+        console.error("ArcGIS scene initialization failed", error);
+        if (mode === "imagery") {
+          setLoadState("error");
+          setStatusText(getErrorMessage(error));
+        } else {
+          setTerrainState("error");
+          setTerrainStatus(getErrorMessage(error));
+        }
       }
     };
 
@@ -362,25 +618,34 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      abortController.abort();
+      sceneGenerationRef.current += 1;
+      loadRequestRef.current += 1;
+
       const map = mapRef.current as
         | (ArcGISObject & { remove?: (layer: ArcGISObject) => void })
         | null;
-      if (layerRef.current) map?.remove?.(layerRef.current);
-      layerRef.current?.destroy?.();
-      layerRef.current = null;
+      if (imageryLayerRef.current) map?.remove?.(imageryLayerRef.current);
+      imageryLayerRef.current?.destroy?.();
+      imageryLayerRef.current = null;
+
+      terrainLayerRef.current?.disposeSources?.();
+      terrainLayerRef.current?.destroy?.();
+      terrainLayerRef.current = null;
+      terrainExtentRef.current = null;
+      layerConstructorRef.current = null;
       viewRef.current = null;
       mapRef.current = null;
-      layerConstructorRef.current = null;
     };
-  }, [loadCog]);
+  }, [loadCog, mode, sdkReady]);
 
   useEffect(() => {
     opacityRef.current = opacity;
-    if (layerRef.current) layerRef.current.opacity = opacity / 100;
+    if (imageryLayerRef.current) imageryLayerRef.current.opacity = opacity / 100;
   }, [opacity]);
 
   useEffect(() => {
-    if (layerRef.current) layerRef.current.visible = visible;
+    if (imageryLayerRef.current) imageryLayerRef.current.visible = visible;
   }, [visible]);
 
   const submitUrl = (event: FormEvent<HTMLFormElement>) => {
@@ -406,69 +671,96 @@ export default function Home() {
 
     setCogUrl(example.url);
     if (activeUrl === example.url && loadState === "ready") {
-      void frameLayer();
+      void frameImagery();
     } else {
       void loadCog(example.url);
     }
   };
 
-  const useDemo = () => {
-    selectExample("bolivia-landsat");
-  };
-
   const selectedExample = EXAMPLE_DATASETS.find(
     (dataset) => dataset.id === selectedExampleId,
   );
+  const activeState = mode === "imagery" ? loadState : terrainState;
+  const frameEnabled = activeState === "ready";
+
+  /* eslint-disable react-hooks/refs -- React owns this custom-element ref; it is not read while rendering. */
+  const scene = sdkReady
+    ? createElement(
+        "arcgis-scene",
+        mode === "imagery"
+          ? ({
+              key: "imagery-scene",
+              ref: sceneElementRef,
+              className: "map-view",
+              suppressHydrationWarning: true,
+              basemap: "satellite",
+              ground: "world-elevation",
+              "camera-position": "-66.65, -15.8, 1080000",
+              "camera-heading": "6",
+              "camera-tilt": "43",
+              "quality-profile": "high",
+            } as ArcGISSceneAttributes)
+          : ({
+              key: "terrain-scene",
+              ref: sceneElementRef,
+              className: "map-view",
+              suppressHydrationWarning: true,
+              spatialReference: { wkid: SWISS_ALTI_HORIZONTAL_WKID },
+              "viewing-mode": "local",
+              "quality-profile": "high",
+            } as ArcGISSceneAttributes),
+        mode === "imagery"
+          ? createElement(
+              "arcgis-expand",
+              {
+                slot: "top-right",
+                label: "Basemap gallery",
+                suppressHydrationWarning: true,
+              } as ArcGISExpandAttributes,
+              createElement("arcgis-basemap-gallery", {
+                label: "Choose a basemap",
+                suppressHydrationWarning: true,
+              } as ArcGISBasemapGalleryAttributes),
+            )
+          : undefined,
+      )
+    : null;
+  /* eslint-enable react-hooks/refs */
 
   return (
     <main className="app-shell">
       <div className="map-stage" aria-label="Interactive 3D map">
-        {createElement(
-          "arcgis-scene",
-          {
-            ref: sceneElementRef,
-            className: "map-view",
-            suppressHydrationWarning: true,
-            basemap: "satellite",
-            ground: "world-elevation",
-            "camera-position": "-66.65, -15.8, 1080000",
-            "camera-heading": "6",
-            "camera-tilt": "43",
-            "quality-profile": "high",
-          } as ArcGISSceneAttributes,
-          createElement(
-            "arcgis-expand",
-            {
-              slot: "top-right",
-              label: "Basemap gallery",
-              suppressHydrationWarning: true,
-            } as ArcGISExpandAttributes,
-            createElement("arcgis-basemap-gallery", {
-              label: "Choose a basemap",
-              suppressHydrationWarning: true,
-            } as ArcGISBasemapGalleryAttributes),
-          ),
-        )}
-        <div className={`map-wash ${loadState === "ready" ? "is-hidden" : ""}`} />
+        {scene}
+        <div className={`map-wash ${activeState === "ready" ? "is-hidden" : ""}`} />
 
         <div className="map-label" aria-hidden="true">
           <span className="map-label__mark">3D</span>
-          <span>DRAG TO ORBIT · SCROLL TO ZOOM</span>
+          <span>
+            {mode === "imagery"
+              ? "DRAG TO ORBIT · SCROLL TO ZOOM"
+              : "LOCAL · EPSG:2056 · NO REPROJECTION"}
+          </span>
         </div>
 
         <button
           className="frame-button"
           type="button"
-          onClick={() => void frameLayer()}
-          disabled={loadState !== "ready"}
-          aria-label="Frame the active raster layer"
+          onClick={() =>
+            void (mode === "imagery" ? frameImagery() : frameTerrain())
+          }
+          disabled={!frameEnabled}
+          aria-label={
+            mode === "imagery"
+              ? "Frame the active raster layer"
+              : "Frame the SwissALTI terrain coverage"
+          }
         >
           <span className="frame-button__target" aria-hidden="true" />
-          Frame layer
+          {mode === "imagery" ? "Frame layer" : "Frame terrain"}
         </button>
       </div>
 
-      <aside className="control-panel" aria-label="Cloud raster controls">
+      <aside className="control-panel" aria-label="Raster terrain controls">
         <header className="brand-row">
           <div className="brand-mark" aria-hidden="true">
             <span />
@@ -482,153 +774,241 @@ export default function Home() {
           <span className="sdk-badge">ArcGIS SDK 5.1</span>
         </header>
 
+        <nav className="mode-switch" aria-label="Viewing mode">
+          <button
+            type="button"
+            className={mode === "imagery" ? "is-active" : ""}
+            onClick={() => setMode("imagery")}
+            aria-pressed={mode === "imagery"}
+          >
+            Cloud imagery
+          </button>
+          <button
+            type="button"
+            className={mode === "terrain" ? "is-active" : ""}
+            onClick={() => setMode("terrain")}
+            aria-pressed={mode === "terrain"}
+          >
+            SwissALTI terrain
+            <span>Experimental</span>
+          </button>
+        </nav>
+
         <section className="intro-block">
-          <p className="section-kicker">Cloud imagery viewer</p>
-          <h1>Bring a cloud raster into 3D.</h1>
+          <p className="section-kicker">
+            {mode === "imagery" ? "Cloud imagery viewer" : "Local terrain experiment"}
+          </p>
+          <h1>
+            {mode === "imagery"
+              ? "Bring a cloud raster into 3D."
+              : "Build the ground from elevation COGs."}
+          </h1>
           <p className="intro-copy">
-            Paste a public Cloud Optimized GeoTIFF URL. The scene reads only the
-            tiles it needs and drapes them over world elevation.
+            {mode === "imagery"
+              ? "Paste a public Cloud Optimized GeoTIFF URL. The scene reads only the tiles it needs and drapes them over world elevation."
+              : "Explore the Zermatt region in a local LV95 scene. The ground is assembled directly from the supplied SwissALTI3D catalog—without reprojection or world elevation."}
           </p>
         </section>
 
-        <section className="example-picker">
-          <div className="example-picker__heading">
-            <label htmlFor="example-dataset">
-              Try an example dataset
-            </label>
-            <span>{EXAMPLE_DATASETS.length} sources</span>
-          </div>
-          <div className="select-field">
-            <select
-              id="example-dataset"
-              value={selectedExampleId}
-              onChange={(event) => selectExample(event.target.value)}
-              disabled={loadState === "loading"}
+        {mode === "imagery" ? (
+          <>
+            <section className="example-picker">
+              <div className="example-picker__heading">
+                <label htmlFor="example-dataset">Try an example dataset</label>
+                <span>{EXAMPLE_DATASETS.length} sources</span>
+              </div>
+              <div className="select-field">
+                <select
+                  id="example-dataset"
+                  value={selectedExampleId}
+                  onChange={(event) => selectExample(event.target.value)}
+                  disabled={loadState === "loading"}
+                >
+                  <option value="">Custom URL</option>
+                  {EXAMPLE_GROUPS.map((group) => (
+                    <optgroup key={group} label={group}>
+                      {EXAMPLE_DATASETS.filter(
+                        (dataset) => dataset.group === group,
+                      ).map((dataset) => (
+                        <option key={dataset.id} value={dataset.id}>
+                          {dataset.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <span className="select-field__chevron" aria-hidden="true">⌄</span>
+              </div>
+              <p className="example-picker__detail">
+                {selectedExample?.detail ??
+                  "Paste and open your own public COG below."}
+              </p>
+            </section>
+
+            <form className="url-form" onSubmit={submitUrl}>
+              <label htmlFor="cog-url">COG file URL</label>
+              <div className="url-field">
+                <span className="url-field__protocol" aria-hidden="true">↗</span>
+                <input
+                  id="cog-url"
+                  name="cog-url"
+                  value={cogUrl}
+                  onChange={(event) => {
+                    setCogUrl(event.target.value);
+                    setSelectedExampleId("");
+                  }}
+                  placeholder="https://…/raster.tif"
+                  autoComplete="url"
+                  spellCheck={false}
+                  aria-describedby="url-hint"
+                />
+              </div>
+              <div className="form-actions">
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={loadState === "loading"}
+                >
+                  {loadState === "loading" ? "Connecting…" : "Open raster"}
+                  <span aria-hidden="true">→</span>
+                </button>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => selectExample("bolivia-landsat")}
+                >
+                  Use example
+                </button>
+              </div>
+              <p id="url-hint" className="field-hint">
+                Requires CORS and HTTP byte-range support.
+              </p>
+            </form>
+
+            <section
+              className={`status-card status-card--${loadState}`}
+              aria-live="polite"
             >
-              <option value="">Custom URL</option>
-              {EXAMPLE_GROUPS.map((group) => (
-                <optgroup key={group} label={group}>
-                  {EXAMPLE_DATASETS.filter((dataset) => dataset.group === group).map(
-                    (dataset) => (
-                      <option key={dataset.id} value={dataset.id}>
-                        {dataset.label}
-                      </option>
-                    ),
-                  )}
-                </optgroup>
-              ))}
-            </select>
-            <span className="select-field__chevron" aria-hidden="true">⌄</span>
-          </div>
-          <p className="example-picker__detail">
-            {selectedExample?.detail ?? "Paste and open your own public COG below."}
-          </p>
-        </section>
+              <div className="status-card__heading">
+                <span className="status-dot" aria-hidden="true" />
+                <span>
+                  {loadState === "error" ? "Connection issue" : "Stream status"}
+                </span>
+              </div>
+              <p>{statusText}</p>
+            </section>
 
-        <form className="url-form" onSubmit={submitUrl}>
-          <label htmlFor="cog-url">COG file URL</label>
-          <div className="url-field">
-            <span className="url-field__protocol" aria-hidden="true">↗</span>
-            <input
-              id="cog-url"
-              name="cog-url"
-              value={cogUrl}
-              onChange={(event) => {
-                setCogUrl(event.target.value);
-                setSelectedExampleId("");
-              }}
-              placeholder="https://…/raster.tif"
-              autoComplete="url"
-              spellCheck={false}
-              aria-describedby="url-hint"
-            />
-          </div>
-          <div className="form-actions">
-            <button className="primary-button" type="submit" disabled={loadState === "loading"}>
-              {loadState === "loading" ? "Connecting…" : "Open raster"}
-              <span aria-hidden="true">→</span>
-            </button>
-            <button className="text-button" type="button" onClick={useDemo}>
-              Use example
-            </button>
-          </div>
-          <p id="url-hint" className="field-hint">
-            Requires CORS and HTTP byte-range support.
-          </p>
-        </form>
+            <section className="layer-section" aria-label="Active layer">
+              <div className="section-heading">
+                <span>Active layer</span>
+                <button
+                  className={`visibility-toggle ${visible ? "is-on" : ""}`}
+                  type="button"
+                  onClick={() => setVisible((current) => !current)}
+                  disabled={loadState !== "ready"}
+                  aria-pressed={visible}
+                >
+                  <span className="visibility-toggle__track"><span /></span>
+                  {visible ? "Visible" : "Hidden"}
+                </button>
+              </div>
 
-        <section className={`status-card status-card--${loadState}`} aria-live="polite">
-          <div className="status-card__heading">
-            <span className="status-dot" aria-hidden="true" />
-            <span>{loadState === "error" ? "Connection issue" : "Stream status"}</span>
-          </div>
-          <p>{statusText}</p>
-        </section>
+              <div className="layer-card">
+                <div className="layer-preview" aria-hidden="true">
+                  <span className="layer-preview__river" />
+                  <span className="layer-preview__ridge layer-preview__ridge--one" />
+                  <span className="layer-preview__ridge layer-preview__ridge--two" />
+                </div>
+                <div className="layer-card__copy">
+                  <strong title={details.name}>{details.name}</strong>
+                  <span title={details.host}>{details.host}</span>
+                </div>
+                <span className="format-pill">COG</span>
+              </div>
 
-        <section className="layer-section" aria-label="Active layer">
-          <div className="section-heading">
-            <span>Active layer</span>
-            <button
-              className={`visibility-toggle ${visible ? "is-on" : ""}`}
-              type="button"
-              onClick={() => setVisible((current) => !current)}
-              disabled={loadState !== "ready"}
-              aria-pressed={visible}
+              <div className="metadata-grid">
+                <div>
+                  <span>Bands</span>
+                  <strong>{details.bands}</strong>
+                </div>
+                <div>
+                  <span>Reference</span>
+                  <strong>{details.spatialReference}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="opacity-section">
+              <div className="section-heading">
+                <label htmlFor="opacity">Layer opacity</label>
+                <output htmlFor="opacity">{opacity}%</output>
+              </div>
+              <input
+                id="opacity"
+                type="range"
+                min="0"
+                max="100"
+                value={opacity}
+                onChange={(event) => setOpacity(Number(event.target.value))}
+                style={{ "--range-progress": `${opacity}%` } as CSSProperties}
+                disabled={loadState !== "ready"}
+              />
+              <div className="range-labels" aria-hidden="true">
+                <span>Basemap</span>
+                <span>Raster</span>
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="experiment-card" aria-label="Experimental terrain configuration">
+              <div className="experiment-card__title">
+                <span className="experiment-badge">Experimental</span>
+                <strong>SwissALTI3D · Zermatt catalog</strong>
+              </div>
+              <p>
+                A custom elevation adapter mosaics intersecting 1 km COGs into
+                the ArcGIS ground tile requested by the local scene.
+              </p>
+              <div className="terrain-facts">
+                <div><span>View</span><strong>Local</strong></div>
+                <div><span>Horizontal</span><strong>EPSG:{SWISS_ALTI_HORIZONTAL_WKID}</strong></div>
+                <div><span>Vertical</span><strong>EPSG:{SWISS_ALTI_VERTICAL_WKID}</strong></div>
+                <div><span>Resolution</span><strong>{SWISS_ALTI_CELL_SIZE_METERS} m</strong></div>
+                <div><span>Catalog</span><strong>{terrainTileCount || "—"} COGs</strong></div>
+                <div><span>Fallback</span><strong>None</strong></div>
+              </div>
+            </section>
+
+            <section
+              className={`status-card status-card--${terrainState}`}
+              aria-live="polite"
             >
-              <span className="visibility-toggle__track"><span /></span>
-              {visible ? "Visible" : "Hidden"}
-            </button>
-          </div>
+              <div className="status-card__heading">
+                <span className="status-dot" aria-hidden="true" />
+                <span>
+                  {terrainState === "error" ? "Terrain issue" : "Terrain status"}
+                </span>
+              </div>
+              <p>{terrainStatus}</p>
+            </section>
 
-          <div className="layer-card">
-            <div className="layer-preview" aria-hidden="true">
-              <span className="layer-preview__river" />
-              <span className="layer-preview__ridge layer-preview__ridge--one" />
-              <span className="layer-preview__ridge layer-preview__ridge--two" />
-            </div>
-            <div className="layer-card__copy">
-              <strong title={details.name}>{details.name}</strong>
-              <span title={details.host}>{details.host}</span>
-            </div>
-            <span className="format-pill">COG</span>
-          </div>
-
-          <div className="metadata-grid">
-            <div>
-              <span>Bands</span>
-              <strong>{details.bands}</strong>
-            </div>
-            <div>
-              <span>Reference</span>
-              <strong>{details.spatialReference}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="opacity-section">
-          <div className="section-heading">
-            <label htmlFor="opacity">Layer opacity</label>
-            <output htmlFor="opacity">{opacity}%</output>
-          </div>
-          <input
-            id="opacity"
-            type="range"
-            min="0"
-            max="100"
-            value={opacity}
-            onChange={(event) => setOpacity(Number(event.target.value))}
-            style={{ "--range-progress": `${opacity}%` } as CSSProperties}
-            disabled={loadState !== "ready"}
-          />
-          <div className="range-labels" aria-hidden="true">
-            <span>Basemap</span>
-            <span>Raster</span>
-          </div>
-        </section>
+            <section className="terrain-note">
+              <strong>Purposefully isolated</strong>
+              <p>
+                This mode has no satellite basemap, basemap gallery, world
+                elevation, or arbitrary elevation URL. A neutral surface and
+                direct shadows reveal the COG-derived terrain.
+              </p>
+            </section>
+          </>
+        )}
 
         <footer className="panel-footer">
           <span className="beta-dot" aria-hidden="true" />
-          Direct COG display is a beta capability in the ArcGIS Maps SDK.
+          {mode === "imagery"
+            ? "Direct COG display is a beta capability in the ArcGIS Maps SDK."
+            : "Experimental local terrain streams only CSV-listed SwissALTI3D COGs."}
         </footer>
       </aside>
     </main>

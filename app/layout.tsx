@@ -23,9 +23,9 @@ export async function generateMetadata(): Promise<Metadata> {
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "Raster Terrain Lab · 3D COG Viewer";
+  const title = "Raster Terrain Lab · Imagery and COG Terrain";
   const description =
-    "Open a Cloud Optimized GeoTIFF directly in an interactive 3D ArcGIS scene.";
+    "Open cloud imagery in 3D or explore an experimental EPSG:2056 local scene grounded by SwissALTI3D COGs.";
 
   return {
     title,
