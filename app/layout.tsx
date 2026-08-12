@@ -64,7 +64,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <script async type="module" src="https://js.arcgis.com/5.1/" />
+        <script async type="module" src="https://js.arcgis.com/5.1.12/" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
