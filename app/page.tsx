@@ -645,6 +645,10 @@ export default function Home() {
         elevationRange: `${audit.elevationMin.toFixed(1)}–${audit.elevationMax.toFixed(1)} m`,
         terrainSamples: `${audit.validSampleCount.toLocaleString()} / ${audit.expectedSampleCount.toLocaleString()}`,
       }));
+      setTerrainStatus("Framing the complete regional terrain extent…");
+      await frameTerrain();
+      if (!isCurrent()) return;
+
       setTerrainState("ready");
       setTerrainStatus(
         "Regional ground verified · interior, seam, and no-data probes passed",
@@ -697,7 +701,7 @@ export default function Home() {
       viewRef.current = null;
       mapRef.current = null;
     };
-  }, [loadCog, mode, sdkReady]);
+  }, [frameTerrain, loadCog, mode, sdkReady]);
 
   useEffect(() => {
     opacityRef.current = opacity;

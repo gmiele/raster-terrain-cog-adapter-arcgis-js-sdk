@@ -43,6 +43,13 @@ test("builds one cached virtual elevation mosaic without reprojection", async ()
   assert.match(page, /metadata\.sourcePixelCount/);
   assert.match(page, /SWISS_ALTI_COGS\.length/);
 
+  const auditIndex = page.indexOf("terrainLayer.auditRegionalCoverage");
+  const frameIndex = page.indexOf("await frameTerrain()", auditIndex);
+  const readyIndex = page.indexOf('setTerrainState("ready")', frameIndex);
+  assert.ok(auditIndex >= 0, "regional validation should run");
+  assert.ok(frameIndex > auditIndex, "terrain should frame after validation");
+  assert.ok(readyIndex > frameIndex, "terrain should become ready after framing");
+
   assert.match(adapter, /resolveSwissAltiCogs\(requestExtent\)/);
   assert.match(adapter, /mosaicWindow/);
   assert.match(adapter, /MAX_SOURCE_CACHE_SIZE/);
