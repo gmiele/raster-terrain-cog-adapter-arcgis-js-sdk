@@ -602,6 +602,58 @@ button {
   text-transform: uppercase;
 }
 
+.validation-card {
+  margin-top: 18px;
+  padding: 12px 13px;
+  border: 1px solid #d7ddd4;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .52);
+}
+
+.validation-card .section-heading > strong {
+  color: #60712d;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.validation-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 11px 0 0;
+}
+
+.validation-card dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e6df;
+}
+
+.validation-card dl div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.validation-card dt {
+  color: #858d86;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.validation-card dd {
+  margin: 0;
+  color: #3f4d42;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .status-card {
   margin-top: 18px;
   padding: 11px 12px;

@@ -11,13 +11,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { createSwissAltiElevationLayer } from "./swissAltiElevation";
 import {
-  loadSwissAltiCatalog,
+  createSwissAltiElevationLayer,
+  type TerrainDiagnostic,
+} from "./swissAltiElevation";
+import {
   SWISS_ALTI_CELL_SIZE_METERS,
+  SWISS_ALTI_COG,
   SWISS_ALTI_HORIZONTAL_WKID,
   SWISS_ALTI_VERTICAL_WKID,
-} from "./swissAltiCatalog";
+} from "./swissAltiSource";
 
 const DEMO_COG_URL =
   "https://ss6imagery.arcgisonline.com/imagery_sample/landsat8/Bolivia_LC08_L1TP_001069_20190719_MS.tiff";
@@ -94,10 +97,10 @@ const EXAMPLE_DATASETS: ExampleDataset[] = [
   },
   {
     id: "swissalti3d",
-    label: "SwissALTI3D · Zürich",
+    label: `SwissALTI3D · Tile ${SWISS_ALTI_COG.id}`,
     detail: "0.5 m elevation · swisstopo · 16 MB",
     group: "Specialized rasters",
-    url: "https://data.geo.admin.ch/ch.swisstopo.swissalti3d/swissalti3d_2024_2610-1092/swissalti3d_2024_2610-1092_0.5_2056_5728.tif",
+    url: SWISS_ALTI_COG.url,
   },
 ];
 
@@ -231,7 +234,7 @@ export default function Home() {
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
   const terrainLayerRef = useRef<
-    (ArcGISObject & { disposeSources?: () => void }) | null
+    (ArcGISObject & { disposeSource?: () => void }) | null
   >(null);
   const terrainExtentRef = useRef<ArcGISObject | null>(null);
   const layerConstructorRef = useRef<ArcGISConstructor | null>(null);
@@ -252,7 +255,12 @@ export default function Home() {
   const [terrainStatus, setTerrainStatus] = useState(
     "Preparing local EPSG:2056 scene…",
   );
-  const [terrainTileCount, setTerrainTileCount] = useState(0);
+  const [terrainValidation, setTerrainValidation] = useState({
+    source: "Pending",
+    groundLayers: "—",
+    centerElevation: "—",
+    tileSamples: "—",
+  });
   const [opacity, setOpacity] = useState(88);
   const [visible, setVisible] = useState(true);
   const [details, setDetails] = useState<RasterDetails>({
@@ -467,7 +475,13 @@ export default function Home() {
 
     const initializeTerrain = async (sceneElement: ArcGISSceneElement) => {
       setTerrainState("loading");
-      setTerrainStatus("Validating the SwissALTI COG catalog…");
+      setTerrainStatus(`Loading SwissALTI COG ${SWISS_ALTI_COG.id}…`);
+      setTerrainValidation({
+        source: "Loading",
+        groundLayers: "—",
+        centerElevation: "—",
+        tileSamples: "—",
+      });
 
       const [
         BaseElevationLayer,
@@ -497,15 +511,11 @@ export default function Home() {
         ArcGISConstructor,
       ];
 
-      const catalog = await loadSwissAltiCatalog(abortController.signal);
-      if (!isCurrent()) return;
-      setTerrainTileCount(catalog.tiles.length);
-
       const spatialReference = new SpatialReference({
         wkid: SWISS_ALTI_HORIZONTAL_WKID,
       });
       const fullExtent = new Extent({
-        ...catalog.extent,
+        ...SWISS_ALTI_COG.extent,
         spatialReference,
       });
       const tileInfo = new TileInfo({
@@ -514,37 +524,84 @@ export default function Home() {
         spatialReference,
         size: [256, 256],
         origin: new Point({
-          x: catalog.extent.xmin,
-          y: catalog.extent.ymax,
+          x: SWISS_ALTI_COG.extent.xmin,
+          y: SWISS_ALTI_COG.extent.ymax,
           spatialReference,
         }),
         lods: TERRAIN_LODS,
       });
 
+      const onDiagnostic = (diagnostic: TerrainDiagnostic) => {
+        if (!isCurrent()) return;
+        if (diagnostic.type === "source-ready") {
+          setTerrainValidation((current) => ({
+            ...current,
+            source: "EPSG:2056 verified",
+          }));
+          setTerrainStatus(diagnostic.message);
+        } else if (diagnostic.type === "tile-ready") {
+          setTerrainValidation((current) => ({
+            ...current,
+            tileSamples: diagnostic.validSampleCount.toLocaleString(),
+          }));
+          setTerrainStatus(diagnostic.message);
+        } else if (diagnostic.type === "tile-empty") {
+          setTerrainValidation((current) => ({
+            ...current,
+            tileSamples: "No data",
+          }));
+          setTerrainStatus(diagnostic.message);
+        } else {
+          setTerrainState("error");
+          setTerrainStatus(diagnostic.message);
+        }
+      };
+
       const terrainLayer = createSwissAltiElevationLayer({
         BaseElevationLayer,
         Extent,
         ImageryTileLayer,
-        catalog,
         fullExtent,
+        onDiagnostic,
         spatialReference,
         tileInfo,
       });
+
+      const loadTerrainLayer = terrainLayer.load as
+        | (() => Promise<ArcGISObject>)
+        | undefined;
+      if (loadTerrainLayer) await loadTerrainLayer.call(terrainLayer);
+      if (!isCurrent()) return;
 
       await sceneElement.componentOnReady();
       if (!isCurrent() || !sceneElement.map) return;
       sceneElement.environment = sceneEnvironment(true);
       sceneElement.clippingArea = fullExtent;
-      sceneElement.map.ground = new Ground({
+      const ground = new Ground({
         layers: [terrainLayer],
         opacity: 1,
         surfaceColor: "#d6ddc7",
         navigationConstraint: { type: "stay-above" },
-      });
+      }) as ArcGISObject & {
+        layers?: { length?: number };
+        queryElevation?: (geometry: ArcGISObject) => Promise<{
+          geometry?: { z?: number };
+        }>;
+      };
+      sceneElement.map.ground = ground;
 
       terrainLayerRef.current = terrainLayer;
       terrainExtentRef.current = fullExtent;
-      setTerrainStatus("Connecting local terrain tiles…");
+      const groundLayerCount = ground.layers?.length ?? 0;
+      setTerrainValidation((current) => ({
+        ...current,
+        groundLayers: String(groundLayerCount),
+      }));
+      if (groundLayerCount !== 1) {
+        throw new Error(`Expected one ground layer; found ${groundLayerCount}.`);
+      }
+
+      setTerrainStatus("Rendering the single-source ground…");
       await sceneElement.viewOnReady();
       if (!isCurrent() || !sceneElement.map || !sceneElement.view) return;
 
@@ -563,27 +620,40 @@ export default function Home() {
 
       mapRef.current = sceneElement.map;
       viewRef.current = sceneElement.view;
-      setTerrainState("ready");
-      setTerrainStatus(
-        `${catalog.tiles.length} SwissALTI COGs · local EPSG:2056 terrain ready`,
-      );
-
-      const centerX = (catalog.extent.xmin + catalog.extent.xmax) / 2;
-      const centerY = (catalog.extent.ymin + catalog.extent.ymax) / 2;
-      const initialExtent = new Extent({
-        xmin: centerX - 3800,
-        ymin: centerY - 3000,
-        xmax: centerX + 3800,
-        ymax: centerY + 3000,
+      const centerX =
+        (SWISS_ALTI_COG.extent.xmin + SWISS_ALTI_COG.extent.xmax) / 2;
+      const centerY =
+        (SWISS_ALTI_COG.extent.ymin + SWISS_ALTI_COG.extent.ymax) / 2;
+      const centerPoint = new Point({
+        x: centerX,
+        y: centerY,
         spatialReference,
       });
+
+      if (!ground.queryElevation) {
+        throw new Error("Ground elevation queries are unavailable.");
+      }
+      const sample = await ground.queryElevation(centerPoint);
+      const centerElevation = sample.geometry?.z;
+      if (!Number.isFinite(centerElevation)) {
+        throw new Error("The ground returned no elevation at the COG center.");
+      }
+      setTerrainValidation((current) => ({
+        ...current,
+        centerElevation: `${centerElevation!.toFixed(1)} m`,
+      }));
+      setTerrainState("ready");
+      setTerrainStatus(
+        `Ground verified · center elevation ${centerElevation!.toFixed(1)} m`,
+      );
+
       const view = sceneElement.view as ArcGISObject & {
         goTo?: (target: unknown, options?: unknown) => Promise<void>;
       };
 
       try {
         await view.goTo?.(
-          { target: initialExtent, tilt: 62, heading: 318 },
+          { target: fullExtent, tilt: 62, heading: 318 },
           { duration: 1200, easing: "ease-in-out" },
         );
       } catch {
@@ -629,7 +699,7 @@ export default function Home() {
       imageryLayerRef.current?.destroy?.();
       imageryLayerRef.current = null;
 
-      terrainLayerRef.current?.disposeSources?.();
+      terrainLayerRef.current?.disposeSource?.();
       terrainLayerRef.current?.destroy?.();
       terrainLayerRef.current = null;
       terrainExtentRef.current = null;
@@ -806,7 +876,7 @@ export default function Home() {
           <p className="intro-copy">
             {mode === "imagery"
               ? "Paste a public Cloud Optimized GeoTIFF URL. The scene reads only the tiles it needs and drapes them over world elevation."
-              : "Explore the Zermatt region in a local LV95 scene. The ground is assembled directly from the supplied SwissALTI3D catalog—without reprojection or world elevation."}
+              : `Inspect one 1 km SwissALTI3D tile in a local LV95 scene. The ground uses only COG ${SWISS_ALTI_COG.id}—without reprojection or world elevation.`}
           </p>
         </section>
 
@@ -964,18 +1034,18 @@ export default function Home() {
             <section className="experiment-card" aria-label="Experimental terrain configuration">
               <div className="experiment-card__title">
                 <span className="experiment-badge">Experimental</span>
-                <strong>SwissALTI3D · Zermatt catalog</strong>
+                <strong>SwissALTI3D · Tile {SWISS_ALTI_COG.id}</strong>
               </div>
               <p>
-                A custom elevation adapter mosaics intersecting 1 km COGs into
-                the ArcGIS ground tile requested by the local scene.
+                A custom elevation adapter turns this exact COG into the sole
+                ArcGIS ground layer. Readiness requires a valid center elevation.
               </p>
               <div className="terrain-facts">
                 <div><span>View</span><strong>Local</strong></div>
                 <div><span>Horizontal</span><strong>EPSG:{SWISS_ALTI_HORIZONTAL_WKID}</strong></div>
                 <div><span>Vertical</span><strong>EPSG:{SWISS_ALTI_VERTICAL_WKID}</strong></div>
                 <div><span>Resolution</span><strong>{SWISS_ALTI_CELL_SIZE_METERS} m</strong></div>
-                <div><span>Catalog</span><strong>{terrainTileCount || "—"} COGs</strong></div>
+                <div><span>Source</span><strong>1 COG</strong></div>
                 <div><span>Fallback</span><strong>None</strong></div>
               </div>
             </section>
@@ -993,6 +1063,19 @@ export default function Home() {
               <p>{terrainStatus}</p>
             </section>
 
+            <section className="validation-card" aria-label="Ground validation">
+              <div className="section-heading">
+                <span>Ground validation</span>
+                <strong>{terrainState === "ready" ? "Verified" : "Checking"}</strong>
+              </div>
+              <dl>
+                <div><dt>COG source</dt><dd>{terrainValidation.source}</dd></div>
+                <div><dt>Ground layers</dt><dd>{terrainValidation.groundLayers}</dd></div>
+                <div><dt>Center elevation</dt><dd>{terrainValidation.centerElevation}</dd></div>
+                <div><dt>Valid tile samples</dt><dd>{terrainValidation.tileSamples}</dd></div>
+              </dl>
+            </section>
+
             <section className="terrain-note">
               <strong>Purposefully isolated</strong>
               <p>
@@ -1008,7 +1091,7 @@ export default function Home() {
           <span className="beta-dot" aria-hidden="true" />
           {mode === "imagery"
             ? "Direct COG display is a beta capability in the ArcGIS Maps SDK."
-            : "Experimental local terrain streams only CSV-listed SwissALTI3D COGs."}
+            : `Experimental local terrain uses only SwissALTI3D COG ${SWISS_ALTI_COG.id}.`}
         </footer>
       </aside>
     </main>

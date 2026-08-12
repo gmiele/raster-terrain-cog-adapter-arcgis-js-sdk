@@ -49,4 +49,6 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.doesNotMatch(adapter, /world-elevation|projectOperator|WebMercator/i);
   assert.match(adapter, /ImageryTileLayer/);
   assert.match(adapter, /fetchPixels/);
+  assert.match(page, /Ground validation/);
+  assert.match(page, /Ground verified/);
 });
