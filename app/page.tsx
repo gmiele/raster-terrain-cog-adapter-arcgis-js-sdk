@@ -232,7 +232,10 @@ export default function Home() {
             },
           },
           ui: {
-            components: ["zoom", "compass", "navigation-toggle", "attribution"],
+            // ArcGIS Maps SDK 5.x removed the legacy widget implementations
+            // behind these string aliases. SceneView retains its built-in map
+            // credits while DefaultUI3D receives no non-DOM widget objects.
+            components: [],
           },
         });
 
@@ -245,6 +248,7 @@ export default function Home() {
         if (!cancelled) await loadCog(DEMO_COG_URL);
       } catch (error) {
         if (cancelled) return;
+        console.error("ArcGIS scene initialization failed", error);
         setLoadState("error");
         setStatusText(getErrorMessage(error));
       }
