@@ -140,6 +140,13 @@ type ArcGISBasemapGalleryAttributes = DetailedHTMLProps<
   label?: string;
 };
 
+type ArcGISExpandAttributes = DetailedHTMLProps<
+  HTMLAttributes<HTMLElement>,
+  HTMLElement
+> & {
+  label?: string;
+};
+
 declare global {
   interface Window {
     $arcgis?: {
@@ -429,11 +436,18 @@ export default function Home() {
             "camera-tilt": "43",
             "quality-profile": "high",
           } as ArcGISSceneAttributes,
-          createElement("arcgis-basemap-gallery", {
-            slot: "top-right",
-            label: "Choose a basemap",
-            suppressHydrationWarning: true,
-          } as ArcGISBasemapGalleryAttributes),
+          createElement(
+            "arcgis-expand",
+            {
+              slot: "top-right",
+              label: "Basemap gallery",
+              suppressHydrationWarning: true,
+            } as ArcGISExpandAttributes,
+            createElement("arcgis-basemap-gallery", {
+              label: "Choose a basemap",
+              suppressHydrationWarning: true,
+            } as ArcGISBasemapGalleryAttributes),
+          ),
         )}
         <div className={`map-wash ${loadState === "ready" ? "is-hidden" : ""}`} />
 
