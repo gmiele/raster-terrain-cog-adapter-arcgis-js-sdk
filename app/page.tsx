@@ -1,6 +1,16 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  createElement,
+  type DetailedHTMLProps,
+  FormEvent,
+  type HTMLAttributes,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 const DEMO_COG_URL =
   "https://ss6imagery.arcgisonline.com/imagery_sample/landsat8/Bolivia_LC08_L1TP_001069_20190719_MS.tiff";
@@ -103,6 +113,26 @@ type ArcGISConstructor = new (
   options: Record<string, unknown>,
 ) => ArcGISObject;
 
+type ArcGISSceneElement = HTMLElement & {
+  componentOnReady: () => Promise<ArcGISSceneElement>;
+  viewOnReady: () => Promise<void>;
+  map?: ArcGISObject | null;
+  view?: ArcGISObject;
+  environment?: Record<string, unknown>;
+};
+
+type ArcGISSceneAttributes = DetailedHTMLProps<
+  HTMLAttributes<ArcGISSceneElement>,
+  ArcGISSceneElement
+> & {
+  basemap?: string;
+  ground?: string;
+  "camera-position"?: string;
+  "camera-heading"?: string;
+  "camera-tilt"?: string;
+  "quality-profile"?: "low" | "medium" | "high";
+};
+
 declare global {
   interface Window {
     $arcgis?: {
@@ -148,7 +178,7 @@ function getHost(url: string) {
 }
 
 export default function Home() {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const sceneElementRef = useRef<ArcGISSceneElement>(null);
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
   const layerRef = useRef<ArcGISObject | null>(null);
@@ -278,55 +308,33 @@ export default function Home() {
     const initialize = async () => {
       try {
         await waitForArcGIS();
-        if (cancelled || !mapContainerRef.current || !window.$arcgis) return;
+        await window.customElements.whenDefined("arcgis-scene");
+        if (cancelled || !sceneElementRef.current || !window.$arcgis) return;
 
-        const [EsriMap, SceneView, ImageryTileLayer] = (await window.$arcgis.import([
-          "@arcgis/core/Map.js",
-          "@arcgis/core/views/SceneView.js",
+        const ImageryTileLayer = (await window.$arcgis.import(
           "@arcgis/core/layers/ImageryTileLayer.js",
-        ])) as ArcGISConstructor[];
+        )) as ArcGISConstructor;
 
         if (cancelled) return;
 
-        const map = new EsriMap({
-          basemap: "dark-gray-vector",
-          ground: "world-elevation",
-        });
-        const view = new SceneView({
-          container: mapContainerRef.current,
-          map,
-          qualityProfile: "high",
-          camera: {
-            position: {
-              longitude: -66.65,
-              latitude: -15.8,
-              z: 1080000,
-            },
-            heading: 6,
-            tilt: 43,
+        const sceneElement = sceneElementRef.current;
+        await sceneElement.componentOnReady();
+        sceneElement.environment = {
+          atmosphereEnabled: true,
+          starsEnabled: false,
+          lighting: {
+            directShadowsEnabled: true,
+            date: new Date("2025-07-19T15:00:00Z"),
           },
-          environment: {
-            atmosphereEnabled: true,
-            starsEnabled: false,
-            lighting: {
-              directShadowsEnabled: true,
-              date: new Date("2025-07-19T15:00:00Z"),
-            },
-          },
-          ui: {
-            // ArcGIS Maps SDK 5.x removed the legacy widget implementations
-            // behind these string aliases. SceneView retains its built-in map
-            // credits while DefaultUI3D receives no non-DOM widget objects.
-            components: [],
-          },
-        });
+        };
+        await sceneElement.viewOnReady();
 
-        mapRef.current = map;
-        viewRef.current = view;
+        if (cancelled || !sceneElement.map || !sceneElement.view) return;
+
+        mapRef.current = sceneElement.map;
+        viewRef.current = sceneElement.view;
         layerConstructorRef.current = ImageryTileLayer;
 
-        const when = view.when as (() => Promise<ArcGISObject>) | undefined;
-        if (when) await when.call(view);
         if (!cancelled) await loadCog(DEMO_COG_URL);
       } catch (error) {
         if (cancelled) return;
@@ -340,11 +348,15 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      const map = mapRef.current as
+        | (ArcGISObject & { remove?: (layer: ArcGISObject) => void })
+        | null;
+      if (layerRef.current) map?.remove?.(layerRef.current);
       layerRef.current?.destroy?.();
-      viewRef.current?.destroy?.();
       layerRef.current = null;
       viewRef.current = null;
       mapRef.current = null;
+      layerConstructorRef.current = null;
     };
   }, [loadCog]);
 
@@ -397,7 +409,17 @@ export default function Home() {
   return (
     <main className="app-shell">
       <div className="map-stage" aria-label="Interactive 3D map">
-        <div ref={mapContainerRef} className="map-view" />
+        {createElement("arcgis-scene", {
+          ref: sceneElementRef,
+          className: "map-view",
+          suppressHydrationWarning: true,
+          basemap: "dark-gray-vector",
+          ground: "world-elevation",
+          "camera-position": "-66.65, -15.8, 1080000",
+          "camera-heading": "6",
+          "camera-tilt": "43",
+          "quality-profile": "high",
+        } as ArcGISSceneAttributes)}
         <div className={`map-wash ${loadState === "ready" ? "is-hidden" : ""}`} />
 
         <div className="map-label" aria-hidden="true">
@@ -566,7 +588,7 @@ export default function Home() {
             max="100"
             value={opacity}
             onChange={(event) => setOpacity(Number(event.target.value))}
-            style={{ "--range-progress": `${opacity}%` } as React.CSSProperties}
+            style={{ "--range-progress": `${opacity}%` } as CSSProperties}
             disabled={loadState !== "ready"}
           />
           <div className="range-labels" aria-hidden="true">

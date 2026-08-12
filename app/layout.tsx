@@ -64,10 +64,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link
-          rel="stylesheet"
-          href="https://js.arcgis.com/5.1/esri/themes/light/main.css"
-        />
         <script async type="module" src="https://js.arcgis.com/5.1/" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
