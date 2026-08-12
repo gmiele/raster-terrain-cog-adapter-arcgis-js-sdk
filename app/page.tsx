@@ -5,6 +5,87 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 const DEMO_COG_URL =
   "https://ss6imagery.arcgisonline.com/imagery_sample/landsat8/Bolivia_LC08_L1TP_001069_20190719_MS.tiff";
 
+type ExampleDataset = {
+  id: string;
+  label: string;
+  detail: string;
+  group: "True-color imagery" | "Specialized rasters";
+  url: string;
+  bandIds?: number[];
+};
+
+const EXAMPLE_DATASETS: ExampleDataset[] = [
+  {
+    id: "bolivia-landsat",
+    label: "Bolivia · Landsat 8",
+    detail: "Multiband Landsat scene · Esri",
+    group: "True-color imagery",
+    url: DEMO_COG_URL,
+    bandIds: [3, 2, 1],
+  },
+  {
+    id: "iceland-sentinel",
+    label: "Iceland · Sentinel-2",
+    detail: "True color · 71 MB",
+    group: "True-color imagery",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/27/V/WL/2026/8/S2C_27VWL_20260809_0_L2A/TCI.tif",
+  },
+  {
+    id: "namib-sentinel",
+    label: "Namib Desert · Sentinel-2",
+    detail: "True color · 193 MB",
+    group: "True-color imagery",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/33/J/VM/2026/8/S2C_33JVM_20260811_0_L2A/TCI.tif",
+  },
+  {
+    id: "great-barrier-reef-sentinel",
+    label: "Great Barrier Reef · Sentinel-2",
+    detail: "True color · 291 MB",
+    group: "True-color imagery",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/55/K/DU/2026/8/S2B_55KDU_20260810_0_L2A/TCI.tif",
+  },
+  {
+    id: "san-francisco-sentinel",
+    label: "San Francisco · Sentinel-2",
+    detail: "True color · 325 MB",
+    group: "True-color imagery",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/10/S/EH/2026/8/S2B_10SEH_20260806_0_L2A/TCI.tif",
+  },
+  {
+    id: "zurich-sentinel",
+    label: "Zürich region · Sentinel-2",
+    detail: "True color · 322 MB",
+    group: "True-color imagery",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/32/T/MT/2026/8/S2C_32TMT_20260811_0_L2A/TCI.tif",
+  },
+  {
+    id: "zurich-red-band",
+    label: "Zürich · Red band",
+    detail: "Single-band Sentinel-2 · 219 MB",
+    group: "Specialized rasters",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/32/T/MT/2026/8/S2C_32TMT_20260811_0_L2A/B04.tif",
+  },
+  {
+    id: "zurich-scene-classification",
+    label: "Zürich · Scene classification",
+    detail: "Categorical Sentinel-2 · 3 MB",
+    group: "Specialized rasters",
+    url: "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/32/T/MT/2026/8/S2C_32TMT_20260811_0_L2A/SCL.tif",
+  },
+  {
+    id: "swissalti3d",
+    label: "SwissALTI3D · Zürich",
+    detail: "0.5 m elevation · swisstopo · 16 MB",
+    group: "Specialized rasters",
+    url: "https://data.geo.admin.ch/ch.swisstopo.swissalti3d/swissalti3d_2024_2610-1092/swissalti3d_2024_2610-1092_0.5_2056_5728.tif",
+  },
+];
+
+const EXAMPLE_GROUPS: ExampleDataset["group"][] = [
+  "True-color imagery",
+  "Specialized rasters",
+];
+
 type LoadState = "starting" | "loading" | "ready" | "error";
 
 type RasterDetails = {
@@ -76,6 +157,7 @@ export default function Home() {
 
   const [cogUrl, setCogUrl] = useState(DEMO_COG_URL);
   const [activeUrl, setActiveUrl] = useState(DEMO_COG_URL);
+  const [selectedExampleId, setSelectedExampleId] = useState("bolivia-landsat");
   const [loadState, setLoadState] = useState<LoadState>("starting");
   const [statusText, setStatusText] = useState("Preparing 3D scene…");
   const [opacity, setOpacity] = useState(88);
@@ -131,13 +213,13 @@ export default function Home() {
         layerRef.current = null;
       }
 
-      const isDemo = url === DEMO_COG_URL;
+      const example = EXAMPLE_DATASETS.find((dataset) => dataset.url === url);
       const layer = new ImageryTileLayer({
         url,
-        title: isDemo ? "Bolivia · Landsat 8" : "Cloud raster",
+        title: example?.label ?? "Cloud raster",
         opacity: opacityRef.current / 100,
         visible: true,
-        ...(isDemo ? { bandIds: [3, 2, 1] } : {}),
+        ...(example?.bandIds ? { bandIds: example.bandIds } : {}),
       });
 
       layerRef.current = layer;
@@ -164,7 +246,7 @@ export default function Home() {
         );
 
         setDetails({
-          name: isDemo ? "Bolivia · Landsat 8" : fileName,
+          name: example?.label ?? fileName,
           host: getHost(url),
           bands: bandCount ? `${bandCount} band${bandCount === 1 ? "" : "s"}` : "Auto bands",
           spatialReference: spatialReference?.latestWkid
@@ -291,14 +373,26 @@ export default function Home() {
     }
   };
 
-  const useDemo = () => {
-    setCogUrl(DEMO_COG_URL);
-    if (activeUrl !== DEMO_COG_URL || loadState === "error") {
-      void loadCog(DEMO_COG_URL);
-    } else {
+  const selectExample = (exampleId: string) => {
+    setSelectedExampleId(exampleId);
+    const example = EXAMPLE_DATASETS.find((dataset) => dataset.id === exampleId);
+    if (!example) return;
+
+    setCogUrl(example.url);
+    if (activeUrl === example.url && loadState === "ready") {
       void frameLayer();
+    } else {
+      void loadCog(example.url);
     }
   };
+
+  const useDemo = () => {
+    selectExample("bolivia-landsat");
+  };
+
+  const selectedExample = EXAMPLE_DATASETS.find(
+    (dataset) => dataset.id === selectedExampleId,
+  );
 
   return (
     <main className="app-shell">
@@ -346,6 +440,40 @@ export default function Home() {
           </p>
         </section>
 
+        <section className="example-picker">
+          <div className="example-picker__heading">
+            <label htmlFor="example-dataset">
+              Try an example dataset
+            </label>
+            <span>{EXAMPLE_DATASETS.length} sources</span>
+          </div>
+          <div className="select-field">
+            <select
+              id="example-dataset"
+              value={selectedExampleId}
+              onChange={(event) => selectExample(event.target.value)}
+              disabled={loadState === "loading"}
+            >
+              <option value="">Custom URL</option>
+              {EXAMPLE_GROUPS.map((group) => (
+                <optgroup key={group} label={group}>
+                  {EXAMPLE_DATASETS.filter((dataset) => dataset.group === group).map(
+                    (dataset) => (
+                      <option key={dataset.id} value={dataset.id}>
+                        {dataset.label}
+                      </option>
+                    ),
+                  )}
+                </optgroup>
+              ))}
+            </select>
+            <span className="select-field__chevron" aria-hidden="true">⌄</span>
+          </div>
+          <p className="example-picker__detail">
+            {selectedExample?.detail ?? "Paste and open your own public COG below."}
+          </p>
+        </section>
+
         <form className="url-form" onSubmit={submitUrl}>
           <label htmlFor="cog-url">COG file URL</label>
           <div className="url-field">
@@ -354,7 +482,10 @@ export default function Home() {
               id="cog-url"
               name="cog-url"
               value={cogUrl}
-              onChange={(event) => setCogUrl(event.target.value)}
+              onChange={(event) => {
+                setCogUrl(event.target.value);
+                setSelectedExampleId("");
+              }}
               placeholder="https://…/raster.tif"
               autoComplete="url"
               spellCheck={false}

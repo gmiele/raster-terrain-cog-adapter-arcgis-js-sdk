@@ -30,7 +30,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -276,6 +277,87 @@ button {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.example-picker {
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid #d8ded8;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .48);
+}
+
+.example-picker__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.example-picker__heading label {
+  color: #495149;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.example-picker__heading span {
+  color: #8b928c;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.select-field {
+  position: relative;
+  margin-top: 8px;
+}
+
+.select-field select {
+  width: 100%;
+  height: 40px;
+  padding: 0 34px 0 11px;
+  border: 1px solid #cbd2cb;
+  border-radius: 5px;
+  outline: none;
+  appearance: none;
+  color: #263029;
+  background: rgba(255, 255, 255, .82);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.select-field select:focus {
+  border-color: #506a56;
+  box-shadow: 0 0 0 3px rgba(74, 105, 82, .12);
+}
+
+.select-field select:disabled {
+  cursor: wait;
+  opacity: .62;
+}
+
+.select-field__chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  pointer-events: none;
+  color: #526057;
+  font-size: 14px;
+  transform: translateY(-58%);
+}
+
+.example-picker__detail {
+  min-height: 13px;
+  margin: 7px 0 0;
+  color: #7d857f;
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 .url-form label,
@@ -698,6 +780,8 @@ button {
   .brand-row { padding-bottom: 14px; }
   .intro-block { padding: 17px 0 15px; }
   .intro-block h1 { font-size: 29px; }
+  .example-picker { margin-bottom: 12px; padding: 9px 10px; }
+  .select-field select { height: 36px; }
   .status-card { margin-top: 12px; }
   .layer-section, .opacity-section { padding-top: 14px; }
   .panel-footer { padding-top: 12px; }
