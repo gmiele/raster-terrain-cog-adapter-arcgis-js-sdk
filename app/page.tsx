@@ -960,10 +960,10 @@ export default function Home() {
             <span />
           </div>
           <div>
-            <p className="eyebrow">COG / SCENE</p>
-            <p className="brand-name">Raster Terrain Lab</p>
+            <p className="eyebrow">Cloud-Optimized GeoTIFF</p>
+            <p className="brand-name">Imagery & Terrain</p>
           </div>
-          <span className="sdk-badge">ArcGIS SDK 5.1</span>
+          <span className="sdk-badge">ArcGIS Maps SDK for JavaScript - 5.1</span>
         </header>
 
         <nav className="mode-switch" aria-label="Viewing mode">
@@ -997,7 +997,7 @@ export default function Home() {
           </h1>
           <p className="intro-copy">
             {mode === "imagery"
-              ? "Paste a public Cloud Optimized GeoTIFF URL. The scene reads only the tiles it needs and drapes them over world elevation."
+              ? "Paste a public Cloud Optimized GeoTIFF (COG) URL. The scene reads only the tiles it needs and drapes them over world elevation."
               : `Explore ${terrainRegion.cogs.length} aligned SwissALTI3D COGs around ${terrainRegion.label} as one local LV95 ground surface—without reprojection or world elevation.`}
           </p>
         </section>

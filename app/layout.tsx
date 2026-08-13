@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "Raster Terrain Lab · Imagery and COG Terrain";
+  const title = "COG Viewer: Raster - Imagery - Terrain";
   const description =
     "Open cloud imagery in 3D or explore an experimental EPSG:2056 local scene grounded by SwissALTI3D COGs.";
 
