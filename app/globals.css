@@ -602,6 +602,82 @@ button {
   text-transform: uppercase;
 }
 
+.terrain-overlay-card {
+  margin-top: 18px;
+  padding: 12px 13px;
+  border: 1px solid #d2d9ce;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .52);
+}
+
+.terrain-overlay-card__status {
+  min-height: 13px;
+  margin: 8px 0 0;
+  color: #747c76;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.terrain-overlay-card__status--error {
+  color: var(--error);
+}
+
+.terrain-overlay-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  color: #495149;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.terrain-overlay-card__actions output {
+  color: #4c584f;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+}
+
+.terrain-overlay-card input[type="range"] {
+  width: 100%;
+  height: 3px;
+  margin: 14px 0 0;
+  border-radius: 3px;
+  outline: none;
+  appearance: none;
+  background: linear-gradient(to right, var(--forest) var(--range-progress), #cfd4cf var(--range-progress));
+}
+
+.terrain-overlay-card input[type="range"]::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--acid);
+  border-radius: 50%;
+  appearance: none;
+  background: var(--forest);
+  cursor: grab;
+}
+
+.terrain-overlay-card input[type="range"]::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 3px solid var(--acid);
+  border-radius: 50%;
+  background: var(--forest);
+  cursor: grab;
+}
+
+.terrain-overlay-card input[type="range"]:disabled,
+.terrain-overlay-card__frame:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.terrain-overlay-card__frame {
+  margin-top: 10px;
+}
+
 .validation-card {
   margin-top: 18px;
   padding: 12px 13px;

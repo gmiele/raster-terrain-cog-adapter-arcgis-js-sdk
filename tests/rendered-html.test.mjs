@@ -34,7 +34,7 @@ test("server-renders both Raster Terrain Lab modes", async () => {
   assert.match(html, /SwissALTI terrain/);
   assert.match(html, /Zürich/);
   assert.match(html, /Bring a cloud raster into 3D/);
-  assert.match(html, /ArcGIS SDK 5\.1/);
+  assert.match(html, /ArcGIS(?: Maps SDK for JavaScript -| SDK) 5\.1/);
 });
 
 test("keeps the experimental scene on web components and EPSG:2056", async () => {

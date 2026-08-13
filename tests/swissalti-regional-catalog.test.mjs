@@ -80,6 +80,12 @@ test("switches one cached virtual elevation mosaic between regional catalogs", a
   assert.match(page, /\[frameTerrain, loadCog, mode, sdkReady, terrainRegion\]/);
   assert.match(page, /layers: \[terrainLayer\]/);
   assert.match(page, /terrainLayer\.auditRegionalCoverage/);
+  assert.match(page, /terrainRegion\.id === "zermatt"/);
+  assert.match(page, /url: terrainRegion\.anchorCog\.url/);
+  assert.match(page, /map\.add\?\.\(overlayLayer\)/);
+  assert.match(page, /terrainOverlayLayerRef\.current/);
+  assert.match(page, /Frame overlay/);
+  assert.match(page, /Surface overlay · 2610-1092/);
 
   const auditIndex = page.indexOf("terrainLayer.auditRegionalCoverage");
   const frameIndex = page.indexOf("await frameTerrain()", auditIndex);

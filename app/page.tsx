@@ -33,6 +33,7 @@ const DEMO_COG_URL =
 
 type AppMode = "imagery" | "terrain";
 type LoadState = "starting" | "loading" | "ready" | "error";
+type TerrainOverlayState = "idle" | "loading" | "ready" | "error";
 
 type ExampleDataset = {
   id: string;
@@ -232,6 +233,7 @@ export default function Home() {
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
   const terrainLayerRef = useRef<SwissAltiElevationLayer | null>(null);
+  const terrainOverlayLayerRef = useRef<ArcGISObject | null>(null);
   const terrainExtentRef = useRef<ArcGISObject | null>(null);
   const layerConstructorRef = useRef<ArcGISConstructor | null>(null);
   const sceneGenerationRef = useRef(0);
@@ -239,6 +241,8 @@ export default function Home() {
   const activeUrlRef = useRef(DEMO_COG_URL);
   const modeRef = useRef<AppMode>("imagery");
   const opacityRef = useRef(88);
+  const terrainOverlayOpacityRef = useRef(82);
+  const terrainOverlayVisibleRef = useRef(true);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [mode, setMode] = useState<AppMode>("imagery");
@@ -250,6 +254,13 @@ export default function Home() {
   const [loadState, setLoadState] = useState<LoadState>("starting");
   const [statusText, setStatusText] = useState("Preparing 3D scene…");
   const [terrainState, setTerrainState] = useState<LoadState>("starting");
+  const [terrainOverlayState, setTerrainOverlayState] =
+    useState<TerrainOverlayState>("idle");
+  const [terrainOverlayStatus, setTerrainOverlayStatus] = useState(
+    "Waiting for the Zermatt terrain…",
+  );
+  const [terrainOverlayOpacity, setTerrainOverlayOpacity] = useState(82);
+  const [terrainOverlayVisible, setTerrainOverlayVisible] = useState(true);
   const [terrainStatus, setTerrainStatus] = useState(
     "Preparing local EPSG:2056 scene…",
   );
@@ -310,6 +321,30 @@ export default function Home() {
           heading: 318,
         },
         { duration: 1300, easing: "ease-in-out" },
+      );
+    } catch {
+      // Navigation cancellation is expected when the user moves the camera.
+    }
+  }, []);
+
+  const frameTerrainOverlay = useCallback(async () => {
+    const view = viewRef.current as
+      | (ArcGISObject & {
+          goTo?: (target: unknown, options?: unknown) => Promise<void>;
+        })
+      | null;
+    const layer = terrainOverlayLayerRef.current as
+      | (ArcGISObject & { fullExtent?: { expand?: (factor: number) => unknown } })
+      | null;
+    if (!view?.goTo || !layer?.fullExtent) return;
+
+    const target = layer.fullExtent.expand
+      ? layer.fullExtent.expand(1.7)
+      : layer.fullExtent;
+    try {
+      await view.goTo(
+        { target, tilt: 62, heading: 318 },
+        { duration: 1200, easing: "ease-in-out" },
       );
     } catch {
       // Navigation cancellation is expected when the user moves the camera.
@@ -477,6 +512,14 @@ export default function Home() {
 
     const initializeTerrain = async (sceneElement: ArcGISSceneElement) => {
       setTerrainState("loading");
+      setTerrainOverlayState(
+        terrainRegion.id === "zermatt" ? "loading" : "idle",
+      );
+      setTerrainOverlayStatus(
+        terrainRegion.id === "zermatt"
+          ? `Loading tile ${terrainRegion.anchorCog.id} as a surface overlay…`
+          : "The test overlay is available for the Zermatt catalog.",
+      );
       setTerrainStatus(
         `Preparing ${terrainRegion.cogs.length} ${terrainRegion.label} SwissALTI COGs…`,
       );
@@ -597,6 +640,41 @@ export default function Home() {
         throw new Error(`Expected one ground layer; found ${groundLayerCount}.`);
       }
 
+      if (terrainRegion.id === "zermatt") {
+        const overlayLayer = new ImageryTileLayer({
+          url: terrainRegion.anchorCog.url,
+          title: `Zermatt elevation COG ${terrainRegion.anchorCog.id} · surface overlay`,
+          opacity: terrainOverlayOpacityRef.current / 100,
+          visible: terrainOverlayVisibleRef.current,
+        }) as ArcGISObject & {
+          load?: (options?: { signal?: AbortSignal }) => Promise<ArcGISObject>;
+        };
+
+        try {
+          await overlayLayer.load?.({ signal: abortController.signal });
+          if (!isCurrent()) {
+            overlayLayer.destroy?.();
+            return;
+          }
+          const map = sceneElement.map as ArcGISObject & {
+            add?: (layer: ArcGISObject) => void;
+          };
+          map.add?.(overlayLayer);
+          terrainOverlayLayerRef.current = overlayLayer;
+          setTerrainOverlayState("ready");
+          setTerrainOverlayStatus(
+            `Tile ${terrainRegion.anchorCog.id} is draped over the COG terrain.`,
+          );
+        } catch (error) {
+          overlayLayer.destroy?.();
+          if (abortController.signal.aborted || !isCurrent()) return;
+          setTerrainOverlayState("error");
+          setTerrainOverlayStatus(
+            `Overlay unavailable: ${getErrorMessage(error)}`,
+          );
+        }
+      }
+
       setTerrainStatus("Rendering the regional COG ground…");
       await sceneElement.viewOnReady();
       if (!isCurrent() || !sceneElement.map || !sceneElement.view) return;
@@ -700,6 +778,12 @@ export default function Home() {
       imageryLayerRef.current?.destroy?.();
       imageryLayerRef.current = null;
 
+      if (terrainOverlayLayerRef.current) {
+        map?.remove?.(terrainOverlayLayerRef.current);
+      }
+      terrainOverlayLayerRef.current?.destroy?.();
+      terrainOverlayLayerRef.current = null;
+
       terrainLayerRef.current?.disposeSource?.();
       terrainLayerRef.current?.destroy?.();
       terrainLayerRef.current = null;
@@ -718,6 +802,20 @@ export default function Home() {
   useEffect(() => {
     if (imageryLayerRef.current) imageryLayerRef.current.visible = visible;
   }, [visible]);
+
+  useEffect(() => {
+    terrainOverlayOpacityRef.current = terrainOverlayOpacity;
+    if (terrainOverlayLayerRef.current) {
+      terrainOverlayLayerRef.current.opacity = terrainOverlayOpacity / 100;
+    }
+  }, [terrainOverlayOpacity]);
+
+  useEffect(() => {
+    terrainOverlayVisibleRef.current = terrainOverlayVisible;
+    if (terrainOverlayLayerRef.current) {
+      terrainOverlayLayerRef.current.visible = terrainOverlayVisible;
+    }
+  }, [terrainOverlayVisible]);
 
   const submitUrl = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1076,6 +1174,62 @@ export default function Home() {
                 <div><span>Fallback</span><strong>None</strong></div>
               </div>
             </section>
+
+            {terrainRegion.id === "zermatt" ? (
+              <section
+                className="terrain-overlay-card"
+                aria-label="Zermatt surface overlay"
+              >
+                <div className="section-heading">
+                  <span>Surface overlay · 2610-1092</span>
+                  <button
+                    className={`visibility-toggle ${terrainOverlayVisible ? "is-on" : ""}`}
+                    type="button"
+                    onClick={() =>
+                      setTerrainOverlayVisible((current) => !current)
+                    }
+                    disabled={terrainOverlayState !== "ready"}
+                    aria-pressed={terrainOverlayVisible}
+                  >
+                    <span className="visibility-toggle__track"><span /></span>
+                    {terrainOverlayVisible ? "Visible" : "Hidden"}
+                  </button>
+                </div>
+                <p className={`terrain-overlay-card__status terrain-overlay-card__status--${terrainOverlayState}`}>
+                  {terrainOverlayStatus}
+                </p>
+                <div className="terrain-overlay-card__actions">
+                  <label htmlFor="terrain-overlay-opacity">Opacity</label>
+                  <output htmlFor="terrain-overlay-opacity">
+                    {terrainOverlayOpacity}%
+                  </output>
+                </div>
+                <input
+                  id="terrain-overlay-opacity"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={terrainOverlayOpacity}
+                  onChange={(event) =>
+                    setTerrainOverlayOpacity(Number(event.target.value))
+                  }
+                  style={
+                    {
+                      "--range-progress": `${terrainOverlayOpacity}%`,
+                    } as CSSProperties
+                  }
+                  disabled={terrainOverlayState !== "ready"}
+                />
+                <button
+                  className="text-button terrain-overlay-card__frame"
+                  type="button"
+                  onClick={() => void frameTerrainOverlay()}
+                  disabled={terrainOverlayState !== "ready"}
+                >
+                  Frame overlay
+                </button>
+              </section>
+            ) : null}
 
             <section
               className={`status-card status-card--${terrainState}`}
