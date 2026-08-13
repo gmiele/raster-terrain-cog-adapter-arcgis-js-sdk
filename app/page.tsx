@@ -131,6 +131,11 @@ type ArcGISConstructor = new (
   options?: Record<string, unknown>,
 ) => ArcGISObject;
 
+type RasterColorRamps = {
+  byName: (name: string) => unknown;
+  createColorRamp: (colors: unknown) => ArcGISObject;
+};
+
 type ArcGISSceneElement = HTMLElement & {
   componentOnReady: () => Promise<ArcGISSceneElement>;
   viewOnReady: () => Promise<void>;
@@ -538,16 +543,20 @@ export default function Home() {
         Ground,
         ImageryTileLayer,
         Point,
+        RasterShadedReliefRenderer,
         SpatialReference,
         TileInfo,
+        rasterColorRamps,
       ] = (await window.$arcgis!.import([
         "@arcgis/core/layers/BaseElevationLayer.js",
         "@arcgis/core/geometry/Extent.js",
         "@arcgis/core/Ground.js",
         "@arcgis/core/layers/ImageryTileLayer.js",
         "@arcgis/core/geometry/Point.js",
+        "@arcgis/core/renderers/RasterShadedReliefRenderer.js",
         "@arcgis/core/geometry/SpatialReference.js",
         "@arcgis/core/layers/support/TileInfo.js",
+        "@arcgis/core/smartMapping/raster/support/colorRamps.js",
       ])) as [
         ArcGISConstructor & {
           createSubclass: (definition: Record<string, unknown>) => ArcGISConstructor;
@@ -558,6 +567,8 @@ export default function Home() {
         ArcGISConstructor,
         ArcGISConstructor,
         ArcGISConstructor,
+        ArcGISConstructor,
+        RasterColorRamps,
       ];
 
       const preparedCatalog = await prepareSwissAltiCatalog(
@@ -641,10 +652,22 @@ export default function Home() {
       }
 
       if (terrainRegion.id === "zermatt") {
+        const overlayColorRamp = rasterColorRamps.createColorRamp(
+          rasterColorRamps.byName("Elevation #1"),
+        );
+        const overlayRenderer = new RasterShadedReliefRenderer({
+          altitude: 42,
+          azimuth: 315,
+          colorRamp: overlayColorRamp,
+          hillshadeType: "traditional",
+          scalingType: "none",
+          zFactor: 1,
+        });
         const overlayLayer = new ImageryTileLayer({
           url: terrainRegion.anchorCog.url,
           title: `Zermatt elevation COG ${terrainRegion.anchorCog.id} · surface overlay`,
           opacity: terrainOverlayOpacityRef.current / 100,
+          renderer: overlayRenderer,
           visible: terrainOverlayVisibleRef.current,
         }) as ArcGISObject & {
           load?: (options?: { signal?: AbortSignal }) => Promise<ArcGISObject>;
@@ -663,7 +686,7 @@ export default function Home() {
           terrainOverlayLayerRef.current = overlayLayer;
           setTerrainOverlayState("ready");
           setTerrainOverlayStatus(
-            `Tile ${terrainRegion.anchorCog.id} is draped over the COG terrain.`,
+            `Tile ${terrainRegion.anchorCog.id} uses a tinted elevation hillshade over the COG terrain.`,
           );
         } catch (error) {
           overlayLayer.destroy?.();
@@ -1181,7 +1204,7 @@ export default function Home() {
                 aria-label="Zermatt surface overlay"
               >
                 <div className="section-heading">
-                  <span>Surface overlay · 2610-1092</span>
+                  <span>Surface overlay · tinted relief</span>
                   <button
                     className={`visibility-toggle ${terrainOverlayVisible ? "is-on" : ""}`}
                     type="button"
