@@ -963,7 +963,7 @@ export default function Home() {
             <p className="eyebrow">Cloud-Optimized GeoTIFF</p>
             <p className="brand-name">Imagery & Terrain</p>
           </div>
-          <span className="sdk-badge">ArcGIS Maps SDK for JavaScript - 5.1</span>
+          <span className="sdk-badge">ArcGIS JS SDK</span>
         </header>
 
         <nav className="mode-switch" aria-label="Viewing mode">
