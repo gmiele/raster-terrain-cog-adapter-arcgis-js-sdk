@@ -56,7 +56,7 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.doesNotMatch(page, /queryElevation|center elevation/i);
 });
 
-test("nests daylight and both 3D measurements in two terrain expands", async () => {
+test("nests terrain analysis tools in three grouped expands", async () => {
   const page = await readFile(
     new URL("../app/page.tsx", import.meta.url),
     "utf8",
@@ -64,14 +64,18 @@ test("nests daylight and both 3D measurements in two terrain expands", async () 
 
   assert.match(page, /key: "terrain-daylight-expand"/);
   assert.match(page, /key: "terrain-measurement-expand"/);
+  assert.match(page, /key: "terrain-line-of-sight-expand"/);
   assert.match(page, /createElement\("arcgis-daylight"/);
   assert.match(page, /createElement\("arcgis-direct-line-measurement-3d"/);
   assert.match(page, /createElement\("arcgis-area-measurement-3d"/);
+  assert.match(page, /createElement\("arcgis-line-of-sight"/);
   assert.match(page, /group: "terrain-tools"/);
   assert.match(page, /slot: "top-right"/);
   assert.match(page, /unit: "metric"/);
   assert.match(page, /directLineMeasurement\.state === "measuring"/);
   assert.match(page, /areaMeasurement\.state === "measuring"/);
   assert.match(page, /!measurementExpand\.expanded/);
-  assert.doesNotMatch(page, /new\s+(?:Daylight|DirectLineMeasurement3D|AreaMeasurement3D)\s*\(/);
+  assert.match(page, /!lineOfSightExpand\.expanded/);
+  assert.match(page, /lineOfSight\.clear/);
+  assert.doesNotMatch(page, /new\s+(?:Daylight|DirectLineMeasurement3D|AreaMeasurement3D|LineOfSight)\s*\(/);
 });

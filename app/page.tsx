@@ -173,6 +173,11 @@ type ArcGISMeasurementElement = HTMLElement & {
   state?: "disabled" | "measured" | "measuring" | "ready" | "unsupported";
 };
 
+type ArcGISLineOfSightElement = HTMLElement & {
+  clear?: () => Promise<void>;
+  state?: "created" | "creating" | "disabled" | "ready";
+};
+
 type ArcGISExpandElement = HTMLElement & {
   expanded?: boolean;
 };
@@ -200,6 +205,13 @@ type ArcGISMeasurementAttributes = DetailedHTMLProps<
 > & {
   label?: string;
   unit?: "metric" | "imperial" | "meters" | "kilometers";
+};
+
+type ArcGISLineOfSightAttributes = DetailedHTMLProps<
+  HTMLAttributes<ArcGISLineOfSightElement>,
+  ArcGISLineOfSightElement
+> & {
+  label?: string;
 };
 
 declare global {
@@ -264,6 +276,8 @@ export default function Home() {
   const measurementExpandRef = useRef<ArcGISExpandElement>(null);
   const directLineMeasurementRef = useRef<ArcGISMeasurementElement>(null);
   const areaMeasurementRef = useRef<ArcGISMeasurementElement>(null);
+  const lineOfSightExpandRef = useRef<ArcGISExpandElement>(null);
+  const lineOfSightRef = useRef<ArcGISLineOfSightElement>(null);
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
@@ -929,6 +943,37 @@ export default function Home() {
   }, [mode, sdkReady, terrainRegion]);
 
   useEffect(() => {
+    if (!sdkReady || mode !== "terrain") return;
+
+    const lineOfSightExpand = lineOfSightExpandRef.current;
+    const lineOfSight = lineOfSightRef.current;
+    if (!lineOfSightExpand || !lineOfSight) return;
+
+    const handleExpandChange = (event: Event) => {
+      const propertyEvent = event as CustomEvent<{ name?: string }>;
+      if (
+        propertyEvent.detail?.name === "expanded" &&
+        !lineOfSightExpand.expanded
+      ) {
+        void lineOfSight.clear?.();
+      }
+    };
+
+    lineOfSightExpand.addEventListener(
+      "arcgisPropertyChange",
+      handleExpandChange,
+    );
+
+    return () => {
+      lineOfSightExpand.removeEventListener(
+        "arcgisPropertyChange",
+        handleExpandChange,
+      );
+      void lineOfSight.clear?.();
+    };
+  }, [mode, sdkReady, terrainRegion]);
+
+  useEffect(() => {
     terrainOverlayOpacityRef.current = terrainOverlayOpacity;
     if (terrainOverlayLayerRef.current) {
       terrainOverlayLayerRef.current.opacity = terrainOverlayOpacity / 100;
@@ -1084,6 +1129,24 @@ export default function Home() {
                     } as ArcGISMeasurementAttributes),
                   ),
                 ),
+              ),
+              createElement(
+                "arcgis-expand",
+                {
+                  key: "terrain-line-of-sight-expand",
+                  ref: lineOfSightExpandRef,
+                  slot: "top-right",
+                  group: "terrain-tools",
+                  icon: "line-of-sight",
+                  label: "Line of sight",
+                  mode: "floating",
+                  suppressHydrationWarning: true,
+                } as ArcGISExpandAttributes,
+                createElement("arcgis-line-of-sight", {
+                  ref: lineOfSightRef,
+                  label: "Line of sight",
+                  suppressHydrationWarning: true,
+                } as ArcGISLineOfSightAttributes),
               ),
             ]),
       )
