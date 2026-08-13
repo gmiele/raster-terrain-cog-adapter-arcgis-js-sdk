@@ -34,7 +34,7 @@ test("server-renders both Raster Terrain Lab modes", async () => {
   assert.match(html, /SwissALTI terrain/);
   assert.match(html, /Zürich/);
   assert.match(html, /Bring a cloud raster into 3D/);
-  assert.match(html, /ArcGIS(?: Maps SDK for JavaScript -| SDK) 5\.1/);
+  assert.match(html, /ArcGIS JS SDK/);
 });
 
 test("keeps the experimental scene on web components and EPSG:2056", async () => {
@@ -54,4 +54,24 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.match(page, /ground verified/);
   assert.match(page, /interior, seam, and no-data probes passed/);
   assert.doesNotMatch(page, /queryElevation|center elevation/i);
+});
+
+test("nests daylight and both 3D measurements in two terrain expands", async () => {
+  const page = await readFile(
+    new URL("../app/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(page, /key: "terrain-daylight-expand"/);
+  assert.match(page, /key: "terrain-measurement-expand"/);
+  assert.match(page, /createElement\("arcgis-daylight"/);
+  assert.match(page, /createElement\("arcgis-direct-line-measurement-3d"/);
+  assert.match(page, /createElement\("arcgis-area-measurement-3d"/);
+  assert.match(page, /group: "terrain-tools"/);
+  assert.match(page, /slot: "top-right"/);
+  assert.match(page, /unit: "metric"/);
+  assert.match(page, /directLineMeasurement\.state === "measuring"/);
+  assert.match(page, /areaMeasurement\.state === "measuring"/);
+  assert.match(page, /!measurementExpand\.expanded/);
+  assert.doesNotMatch(page, /new\s+(?:Daylight|DirectLineMeasurement3D|AreaMeasurement3D)\s*\(/);
 });

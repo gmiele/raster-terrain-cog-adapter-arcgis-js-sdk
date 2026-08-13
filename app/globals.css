@@ -68,6 +68,32 @@ button {
   z-index: 1;
 }
 
+.measurement-tools-panel {
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  background: #fff;
+}
+
+.measurement-tool {
+  margin: 0;
+}
+
+.measurement-tool + .measurement-tool {
+  border-top: 1px solid #dfe4df;
+}
+
+.measurement-tool__heading {
+  margin: 0;
+  padding: 10px 14px 4px;
+  color: #566058;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
 .map-wash {
   z-index: 2;
   pointer-events: none;

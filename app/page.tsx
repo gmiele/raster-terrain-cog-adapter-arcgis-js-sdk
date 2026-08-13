@@ -168,11 +168,38 @@ type ArcGISBasemapGalleryAttributes = DetailedHTMLProps<
   label?: string;
 };
 
+type ArcGISMeasurementElement = HTMLElement & {
+  clear?: () => Promise<void>;
+  state?: "disabled" | "measured" | "measuring" | "ready" | "unsupported";
+};
+
+type ArcGISExpandElement = HTMLElement & {
+  expanded?: boolean;
+};
+
 type ArcGISExpandAttributes = DetailedHTMLProps<
+  HTMLAttributes<ArcGISExpandElement>,
+  ArcGISExpandElement
+> & {
+  group?: string;
+  icon?: string;
+  label?: string;
+  mode?: "auto" | "drawer" | "floating";
+};
+
+type ArcGISDaylightAttributes = DetailedHTMLProps<
   HTMLAttributes<HTMLElement>,
   HTMLElement
 > & {
   label?: string;
+};
+
+type ArcGISMeasurementAttributes = DetailedHTMLProps<
+  HTMLAttributes<ArcGISMeasurementElement>,
+  ArcGISMeasurementElement
+> & {
+  label?: string;
+  unit?: "metric" | "imperial" | "meters" | "kilometers";
 };
 
 declare global {
@@ -234,6 +261,9 @@ function sceneEnvironment(local: boolean) {
 
 export default function Home() {
   const sceneElementRef = useRef<ArcGISSceneElement>(null);
+  const measurementExpandRef = useRef<ArcGISExpandElement>(null);
+  const directLineMeasurementRef = useRef<ArcGISMeasurementElement>(null);
+  const areaMeasurementRef = useRef<ArcGISMeasurementElement>(null);
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
@@ -827,6 +857,78 @@ export default function Home() {
   }, [visible]);
 
   useEffect(() => {
+    if (!sdkReady || mode !== "terrain") return;
+
+    const measurementExpand = measurementExpandRef.current;
+    const directLineMeasurement = directLineMeasurementRef.current;
+    const areaMeasurement = areaMeasurementRef.current;
+    if (!measurementExpand || !directLineMeasurement || !areaMeasurement) {
+      return;
+    }
+
+    const clearMeasurements = () => {
+      void directLineMeasurement.clear?.();
+      void areaMeasurement.clear?.();
+    };
+    const handleExpandChange = (event: Event) => {
+      const propertyEvent = event as CustomEvent<{ name?: string }>;
+      if (
+        propertyEvent.detail?.name === "expanded" &&
+        !measurementExpand.expanded
+      ) {
+        clearMeasurements();
+      }
+    };
+    const handleDirectLineChange = (event: Event) => {
+      const propertyEvent = event as CustomEvent<{ name?: string }>;
+      if (
+        propertyEvent.detail?.name === "state" &&
+        directLineMeasurement.state === "measuring"
+      ) {
+        void areaMeasurement.clear?.();
+      }
+    };
+    const handleAreaChange = (event: Event) => {
+      const propertyEvent = event as CustomEvent<{ name?: string }>;
+      if (
+        propertyEvent.detail?.name === "state" &&
+        areaMeasurement.state === "measuring"
+      ) {
+        void directLineMeasurement.clear?.();
+      }
+    };
+
+    measurementExpand.addEventListener(
+      "arcgisPropertyChange",
+      handleExpandChange,
+    );
+    directLineMeasurement.addEventListener(
+      "arcgisPropertyChange",
+      handleDirectLineChange,
+    );
+    areaMeasurement.addEventListener(
+      "arcgisPropertyChange",
+      handleAreaChange,
+    );
+
+    return () => {
+      measurementExpand.removeEventListener(
+        "arcgisPropertyChange",
+        handleExpandChange,
+      );
+      directLineMeasurement.removeEventListener(
+        "arcgisPropertyChange",
+        handleDirectLineChange,
+      );
+      areaMeasurement.removeEventListener(
+        "arcgisPropertyChange",
+        handleAreaChange,
+      );
+      clearMeasurements();
+    };
+  }, [mode, sdkReady, terrainRegion]);
+
+  useEffect(() => {
     terrainOverlayOpacityRef.current = terrainOverlayOpacity;
     if (terrainOverlayLayerRef.current) {
       terrainOverlayLayerRef.current.opacity = terrainOverlayOpacity / 100;
@@ -901,10 +1003,11 @@ export default function Home() {
               "viewing-mode": "local",
               "quality-profile": "high",
             } as ArcGISSceneAttributes),
-        mode === "imagery"
-          ? createElement(
+        ...(mode === "imagery"
+          ? [createElement(
               "arcgis-expand",
               {
+                key: "imagery-basemap-expand",
                 slot: "top-right",
                 label: "Basemap gallery",
                 suppressHydrationWarning: true,
@@ -913,8 +1016,76 @@ export default function Home() {
                 label: "Choose a basemap",
                 suppressHydrationWarning: true,
               } as ArcGISBasemapGalleryAttributes),
-            )
-          : undefined,
+            )]
+          : [
+              createElement(
+                "arcgis-expand",
+                {
+                  key: "terrain-daylight-expand",
+                  slot: "top-right",
+                  group: "terrain-tools",
+                  icon: "brightness",
+                  label: "Daylight",
+                  mode: "floating",
+                  suppressHydrationWarning: true,
+                } as ArcGISExpandAttributes,
+                createElement("arcgis-daylight", {
+                  label: "Daylight",
+                  suppressHydrationWarning: true,
+                } as ArcGISDaylightAttributes),
+              ),
+              createElement(
+                "arcgis-expand",
+                {
+                  key: "terrain-measurement-expand",
+                  ref: measurementExpandRef,
+                  slot: "top-right",
+                  group: "terrain-tools",
+                  icon: "measure",
+                  label: "Measurements",
+                  mode: "floating",
+                  suppressHydrationWarning: true,
+                } as ArcGISExpandAttributes,
+                createElement(
+                  "div",
+                  {
+                    className: "measurement-tools-panel",
+                    role: "group",
+                    "aria-label": "3D measurement tools",
+                  },
+                  createElement(
+                    "section",
+                    { className: "measurement-tool" },
+                    createElement(
+                      "p",
+                      { className: "measurement-tool__heading" },
+                      "Direct line",
+                    ),
+                    createElement("arcgis-direct-line-measurement-3d", {
+                      ref: directLineMeasurementRef,
+                      label: "Direct line measurement",
+                      unit: "metric",
+                      suppressHydrationWarning: true,
+                    } as ArcGISMeasurementAttributes),
+                  ),
+                  createElement(
+                    "section",
+                    { className: "measurement-tool" },
+                    createElement(
+                      "p",
+                      { className: "measurement-tool__heading" },
+                      "Area",
+                    ),
+                    createElement("arcgis-area-measurement-3d", {
+                      ref: areaMeasurementRef,
+                      label: "Area measurement",
+                      unit: "metric",
+                      suppressHydrationWarning: true,
+                    } as ArcGISMeasurementAttributes),
+                  ),
+                ),
+              ),
+            ]),
       )
     : null;
   /* eslint-enable react-hooks/refs */
