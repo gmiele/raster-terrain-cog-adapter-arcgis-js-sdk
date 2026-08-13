@@ -332,7 +332,7 @@ async function loadSource(
 ): Promise<PreparedSource> {
   const layer = new ImageryTileLayer({
     url: cog.url,
-    title: `SwissALTI3D ${cog.id}`,
+    title: `SwissALTI3D ${cog.year} ${cog.id}`,
     visible: false,
   }) as SourceLayer;
 
