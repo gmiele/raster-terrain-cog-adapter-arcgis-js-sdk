@@ -18,11 +18,14 @@ import {
   type SwissAltiElevationLayer,
 } from "./swissAltiElevation";
 import {
+  DEFAULT_SWISS_ALTI_REGION,
+  getSwissAltiRegion,
+  SWISS_ALTI_REGIONS,
   SWISS_ALTI_CELL_SIZE_METERS,
   SWISS_ALTI_COG,
-  SWISS_ALTI_COGS,
   SWISS_ALTI_HORIZONTAL_WKID,
   SWISS_ALTI_VERTICAL_WKID,
+  type SwissAltiRegionId,
 } from "./swissAltiSource";
 
 const DEMO_COG_URL =
@@ -239,6 +242,8 @@ export default function Home() {
 
   const [sdkReady, setSdkReady] = useState(false);
   const [mode, setMode] = useState<AppMode>("imagery");
+  const [terrainRegionId, setTerrainRegionId] =
+    useState<SwissAltiRegionId>(DEFAULT_SWISS_ALTI_REGION.id);
   const [cogUrl, setCogUrl] = useState(DEMO_COG_URL);
   const [activeUrl, setActiveUrl] = useState(DEMO_COG_URL);
   const [selectedExampleId, setSelectedExampleId] = useState("bolivia-landsat");
@@ -264,6 +269,8 @@ export default function Home() {
     bands: "9 bands",
     spatialReference: "Detecting…",
   });
+  const terrainRegion = getSwissAltiRegion(terrainRegionId);
+  const terrainYears = terrainRegion.years.join("–");
 
   const frameImagery = useCallback(async () => {
     const view = viewRef.current as
@@ -470,7 +477,9 @@ export default function Home() {
 
     const initializeTerrain = async (sceneElement: ArcGISSceneElement) => {
       setTerrainState("loading");
-      setTerrainStatus(`Preparing ${SWISS_ALTI_COGS.length} SwissALTI COGs…`);
+      setTerrainStatus(
+        `Preparing ${terrainRegion.cogs.length} ${terrainRegion.label} SwissALTI COGs…`,
+      );
       setTerrainValidation({
         source: "Loading",
         groundLayers: "—",
@@ -510,6 +519,7 @@ export default function Home() {
 
       const preparedCatalog = await prepareSwissAltiCatalog(
         ImageryTileLayer,
+        terrainRegion,
         abortController.signal,
       );
       if (!isCurrent()) {
@@ -524,10 +534,7 @@ export default function Home() {
         spatialReference,
       });
       const initialExtent = new Extent({
-        xmin: SWISS_ALTI_COG.extent.xmin - 1_000,
-        ymin: SWISS_ALTI_COG.extent.ymin - 1_000,
-        xmax: SWISS_ALTI_COG.extent.xmax + 1_000,
-        ymax: SWISS_ALTI_COG.extent.ymax + 1_000,
+        ...terrainRegion.initialExtent,
         spatialReference,
       });
       const tileInfo = new TileInfo({
@@ -544,11 +551,11 @@ export default function Home() {
       });
       setTerrainValidation((current) => ({
         ...current,
-        source: `${metadata.sourceCount} aligned COGs · EPSG:2056`,
+        source: `${terrainRegion.label} · ${metadata.sourceCount} aligned COGs`,
         sourcePixels: metadata.sourcePixelCount.toLocaleString(),
       }));
       setTerrainStatus(
-        `Regional grid verified · ${metadata.nativeResolution} m native pixels`,
+        `${terrainRegion.label} grid verified · ${metadata.nativeResolution} m native pixels`,
       );
 
       const terrainLayer = createSwissAltiElevationLayer({
@@ -651,7 +658,7 @@ export default function Home() {
 
       setTerrainState("ready");
       setTerrainStatus(
-        "Regional ground verified · interior, seam, and no-data probes passed",
+        `${terrainRegion.label} ground verified · interior, seam, and no-data probes passed`,
       );
     };
 
@@ -701,7 +708,7 @@ export default function Home() {
       viewRef.current = null;
       mapRef.current = null;
     };
-  }, [frameTerrain, loadCog, mode, sdkReady]);
+  }, [frameTerrain, loadCog, mode, sdkReady, terrainRegion]);
 
   useEffect(() => {
     opacityRef.current = opacity;
@@ -765,7 +772,7 @@ export default function Home() {
               "quality-profile": "high",
             } as ArcGISSceneAttributes)
           : ({
-              key: "terrain-scene",
+              key: `terrain-scene-${terrainRegion.id}`,
               ref: sceneElementRef,
               className: "map-view",
               suppressHydrationWarning: true,
@@ -802,7 +809,7 @@ export default function Home() {
           <span>
             {mode === "imagery"
               ? "DRAG TO ORBIT · SCROLL TO ZOOM"
-              : "LOCAL · EPSG:2056 · NO REPROJECTION"}
+              : `${terrainRegion.label.toUpperCase()} · LOCAL · EPSG:2056 · NO REPROJECTION`}
           </span>
         </div>
 
@@ -816,7 +823,7 @@ export default function Home() {
           aria-label={
             mode === "imagery"
               ? "Frame the active raster layer"
-              : "Frame the SwissALTI terrain coverage"
+              : `Frame the ${terrainRegion.label} SwissALTI terrain coverage`
           }
         >
           <span className="frame-button__target" aria-hidden="true" />
@@ -870,7 +877,7 @@ export default function Home() {
           <p className="intro-copy">
             {mode === "imagery"
               ? "Paste a public Cloud Optimized GeoTIFF URL. The scene reads only the tiles it needs and drapes them over world elevation."
-              : `Explore ${SWISS_ALTI_COGS.length} aligned SwissALTI3D COGs as one local LV95 ground surface—without reprojection or world elevation.`}
+              : `Explore ${terrainRegion.cogs.length} aligned SwissALTI3D COGs around ${terrainRegion.label} as one local LV95 ground surface—without reprojection or world elevation.`}
           </p>
         </section>
 
@@ -1025,10 +1032,34 @@ export default function Home() {
           </>
         ) : (
           <>
+            <section className="example-picker terrain-region-picker">
+              <div className="example-picker__heading">
+                <label htmlFor="terrain-region">Terrain catalog</label>
+                <span>{SWISS_ALTI_REGIONS.length} regions</span>
+              </div>
+              <div className="select-field">
+                <select
+                  id="terrain-region"
+                  value={terrainRegionId}
+                  onChange={(event) =>
+                    setTerrainRegionId(event.target.value as SwissAltiRegionId)
+                  }
+                >
+                  {SWISS_ALTI_REGIONS.map((region) => (
+                    <option key={region.id} value={region.id}>
+                      {region.label} · {region.cogs.length} COGs
+                    </option>
+                  ))}
+                </select>
+                <span className="select-field__chevron" aria-hidden="true">⌄</span>
+              </div>
+              <p className="example-picker__detail">{terrainRegion.detail}</p>
+            </section>
+
             <section className="experiment-card" aria-label="Experimental terrain configuration">
               <div className="experiment-card__title">
                 <span className="experiment-badge">Experimental</span>
-                <strong>SwissALTI3D · Regional COG mosaic</strong>
+                <strong>SwissALTI3D · {terrainRegion.label} COG mosaic</strong>
               </div>
               <p>
                 One custom elevation layer routes every terrain request to the
@@ -1040,7 +1071,8 @@ export default function Home() {
                 <div><span>Horizontal</span><strong>EPSG:{SWISS_ALTI_HORIZONTAL_WKID}</strong></div>
                 <div><span>Vertical</span><strong>EPSG:{SWISS_ALTI_VERTICAL_WKID}</strong></div>
                 <div><span>Resolution</span><strong>{SWISS_ALTI_CELL_SIZE_METERS} m</strong></div>
-                <div><span>Source</span><strong>{SWISS_ALTI_COGS.length} COGs</strong></div>
+                <div><span>Years</span><strong>{terrainYears}</strong></div>
+                <div><span>Source</span><strong>{terrainRegion.cogs.length} COGs</strong></div>
                 <div><span>Fallback</span><strong>None</strong></div>
               </div>
             </section>
@@ -1088,7 +1120,7 @@ export default function Home() {
           <span className="beta-dot" aria-hidden="true" />
           {mode === "imagery"
             ? "Direct COG display is a beta capability in the ArcGIS Maps SDK."
-            : `Experimental local terrain uses ${SWISS_ALTI_COGS.length} SwissALTI3D COGs as one virtual mosaic.`}
+            : `Experimental local terrain uses ${terrainRegion.cogs.length} ${terrainRegion.label} SwissALTI3D COGs as one virtual mosaic.`}
         </footer>
       </aside>
     </main>

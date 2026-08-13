@@ -2,15 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("imports all 298 regional SwissALTI COG coordinates", async () => {
-  const source = await readFile(
-    new URL("../app/swissAltiSource.ts", import.meta.url),
-    "utf8",
-  );
+function parseCatalog(source, constantName) {
   const catalogBlock = source.match(
-    /SWISS_ALTI_CATALOG_ROWS\s*=\s*\[([\s\S]*?)\]\s*as const/,
+    new RegExp(`${constantName}\\s*=\\s*\\[([\\s\\S]*?)\\]\\s*as const`),
   )?.[1];
-  assert.ok(catalogBlock, "regional catalog rows should be present");
+  assert.ok(catalogBlock, `${constantName} should be present`);
 
   const entries = [];
   for (const match of catalogBlock.matchAll(/\[(\d{4}), (\d{4}), \[([^\]]*)\]\]/g)) {
@@ -20,46 +16,70 @@ test("imports all 298 regional SwissALTI COG coordinates", async () => {
       .split(",")
       .map((value) => Number(value.trim()))
       .filter(Number.isFinite);
-    for (const east of eastings) entries.push({ id: `${east}-${north}`, year });
+    for (const east of eastings) entries.push({ east, id: `${east}-${north}`, north, year });
   }
+  return entries;
+}
 
-  const ids = entries.map(({ id }) => id);
-  assert.equal(ids.length, 298);
-  assert.equal(new Set(ids).size, 298);
-  assert.deepEqual([...new Set(entries.map(({ year }) => year))], [2024]);
-  assert.ok(ids.includes("2610-1092"));
-  assert.ok(ids.includes("2636-1095"));
-  assert.match(source, /resolveSwissAltiCogs/);
-  assert.match(source, /SWISS_ALTI_REGIONAL_EXTENT/);
-  assert.match(source, /createSwissAltiCatalog/);
-  assert.match(source, /swissalti3d_\$\{year\}_\$\{id\}_0\.5_2056_5728\.tif/);
-  assert.doesNotMatch(source, /swissalti3d_2024_\$\{id\}/);
+test("keeps complete, independent Zermatt and Zürich regional catalogs", async () => {
+  const source = await readFile(
+    new URL("../app/swissAltiSource.ts", import.meta.url),
+    "utf8",
+  );
+  const zermatt = parseCatalog(source, "SWISS_ALTI_ZERMATT_CATALOG_ROWS");
+  const zurich = parseCatalog(source, "SWISS_ALTI_ZURICH_CATALOG_ROWS");
+
+  assert.equal(zermatt.length, 298);
+  assert.equal(new Set(zermatt.map(({ id }) => id)).size, 298);
+  assert.deepEqual([...new Set(zermatt.map(({ year }) => year))], [2024]);
+  assert.ok(zermatt.some(({ id }) => id === "2610-1092"));
+  assert.ok(zermatt.some(({ id }) => id === "2636-1095"));
+
+  assert.equal(zurich.length, 124);
+  assert.equal(new Set(zurich.map(({ id }) => id)).size, 124);
+  assert.equal(zurich.filter(({ year }) => year === 2019).length, 41);
+  assert.equal(zurich.filter(({ year }) => year === 2020).length, 83);
+  assert.equal(Math.min(...zurich.map(({ east }) => east)), 2676);
+  assert.equal(Math.max(...zurich.map(({ east }) => east)), 2689);
+  assert.equal(Math.min(...zurich.map(({ north }) => north)), 1241);
+  assert.equal(Math.max(...zurich.map(({ north }) => north)), 1254);
+  assert.ok(zurich.some(({ id, year }) => id === "2683-1248" && year === 2020));
 });
 
-test("preserves each source year for mixed-year catalogs such as Zürich", async () => {
+test("preserves source years and creates region-scoped lookup state", async () => {
   const source = await readFile(
     new URL("../app/swissAltiSource.ts", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /year: number/);
-  assert.match(source, /\[year, northKm, eastings\]/);
+  assert.match(source, /type SwissAltiRegionId = "zermatt" \| "zurich"/);
+  assert.match(source, /SWISS_ALTI_REGIONS/);
+  assert.match(source, /label: "Zürich"/);
+  assert.match(source, /detail: "124 tiles · 2019–2020 · Swiss Plateau"/);
   assert.match(source, /createSwissAltiCog\(year, eastKm, northKm\)/);
   assert.match(source, /swissalti3d_\$\{year\}_\$\{id\}/);
+  assert.match(source, /cacheKey: `\$\{year\}:\$\{id\}`/);
   assert.match(source, /Duplicate SwissALTI tile coordinate/);
+  assert.match(source, /resolveSwissAltiCogs\(\s*region: SwissAltiRegionCatalog/);
+  assert.match(source, /region\.cogById\.get/);
+  assert.doesNotMatch(source, /swissalti3d_2024_\$\{id\}/);
 });
 
-test("builds one cached virtual elevation mosaic without reprojection", async () => {
+test("switches one cached virtual elevation mosaic between regional catalogs", async () => {
   const [page, adapter] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/swissAltiElevation.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /prepareSwissAltiCatalog/);
+  assert.match(page, /id="terrain-region"/);
+  assert.match(page, /SWISS_ALTI_REGIONS\.map/);
+  assert.match(page, /setTerrainRegionId/);
+  assert.match(page, /prepareSwissAltiCatalog\(\s*ImageryTileLayer,\s*terrainRegion,/);
+  assert.match(page, /terrainRegion\.initialExtent/);
+  assert.match(page, /key: `terrain-scene-\$\{terrainRegion\.id\}`/);
+  assert.match(page, /\[frameTerrain, loadCog, mode, sdkReady, terrainRegion\]/);
   assert.match(page, /layers: \[terrainLayer\]/);
   assert.match(page, /terrainLayer\.auditRegionalCoverage/);
-  assert.match(page, /metadata\.sourcePixelCount/);
-  assert.match(page, /SWISS_ALTI_COGS\.length/);
 
   const auditIndex = page.indexOf("terrainLayer.auditRegionalCoverage");
   const frameIndex = page.indexOf("await frameTerrain()", auditIndex);
@@ -68,12 +88,14 @@ test("builds one cached virtual elevation mosaic without reprojection", async ()
   assert.ok(frameIndex > auditIndex, "terrain should frame after validation");
   assert.ok(readyIndex > frameIndex, "terrain should become ready after framing");
 
-  assert.match(adapter, /resolveSwissAltiCogs\(requestExtent\)/);
+  assert.match(adapter, /resolveSwissAltiCogs\(region, requestExtent\)/);
+  assert.match(adapter, /region\.validationProbes\.map/);
+  assert.match(adapter, /cache\.get\(cog\.cacheKey\)/);
+  assert.match(adapter, /cache\.set\(cog\.cacheKey, entry\)/);
   assert.match(adapter, /mosaicWindow/);
   assert.match(adapter, /MAX_SOURCE_CACHE_SIZE/);
   assert.match(adapter, /withSource/);
   assert.match(adapter, /fetchPixels/);
-  assert.match(adapter, /intentional-hole/);
   assert.match(adapter, /SWISS_ALTI_NO_DATA_VALUE/);
   assert.doesNotMatch(
     adapter,

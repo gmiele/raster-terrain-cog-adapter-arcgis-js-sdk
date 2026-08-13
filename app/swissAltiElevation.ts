@@ -1,13 +1,11 @@
 import {
   resolveSwissAltiCogs,
   SWISS_ALTI_CELL_SIZE_METERS,
-  SWISS_ALTI_COG,
   SWISS_ALTI_COG_PIXEL_SIZE,
-  SWISS_ALTI_COGS,
   SWISS_ALTI_HORIZONTAL_WKID,
   SWISS_ALTI_NO_DATA_VALUE,
-  SWISS_ALTI_REGIONAL_EXTENT,
   type SwissAltiCog,
+  type SwissAltiRegionCatalog,
 } from "./swissAltiSource";
 
 type ArcGISObject = Record<string, unknown> & {
@@ -83,6 +81,7 @@ type SourceCacheEntry = {
 };
 
 export type SwissAltiMetadata = SourceMetadata & {
+  regionId: string;
   sourceCount: number;
   sourcePixelCount: number;
 };
@@ -90,6 +89,7 @@ export type SwissAltiMetadata = SourceMetadata & {
 export type PreparedSwissAltiCatalog = {
   dispose: () => void;
   metadata: SwissAltiMetadata;
+  region: SwissAltiRegionCatalog;
   withSource: <T>(
     cog: SwissAltiCog,
     signal: AbortSignal | undefined,
@@ -408,6 +408,7 @@ async function loadSource(
 
 export async function prepareSwissAltiCatalog(
   ImageryTileLayer: ArcGISConstructor,
+  region: SwissAltiRegionCatalog,
   signal?: AbortSignal,
 ): Promise<PreparedSwissAltiCatalog> {
   const cache = new Map<string, SourceCacheEntry>();
@@ -429,7 +430,7 @@ export async function prepareSwissAltiCatalog(
   };
 
   const getEntry = (cog: SwissAltiCog, requestSignal?: AbortSignal) => {
-    const existing = cache.get(cog.id);
+    const existing = cache.get(cog.cacheKey);
     if (existing) return existing;
 
     const entry: SourceCacheEntry = {
@@ -445,10 +446,10 @@ export async function prepareSwissAltiCatalog(
       if (disposed) source.layer.destroy?.();
       return source;
     }).catch((error) => {
-      if (cache.get(cog.id) === entry) cache.delete(cog.id);
+      if (cache.get(cog.cacheKey) === entry) cache.delete(cog.cacheKey);
       throw error;
     });
-    cache.set(cog.id, entry);
+    cache.set(cog.cacheKey, entry);
     return entry;
   };
 
@@ -475,29 +476,31 @@ export async function prepareSwissAltiCatalog(
   };
 
   const anchorMetadata = await withSource(
-    SWISS_ALTI_COG,
+    region.anchorCog,
     signal,
     async ({ metadata }) => metadata,
   );
 
   const metadata: SwissAltiMetadata = {
     ...anchorMetadata,
-    extent: { ...SWISS_ALTI_REGIONAL_EXTENT },
+    extent: { ...region.extent },
     width: Math.round(
-      (SWISS_ALTI_REGIONAL_EXTENT.xmax - SWISS_ALTI_REGIONAL_EXTENT.xmin) /
+      (region.extent.xmax - region.extent.xmin) /
         anchorMetadata.nativeResolution,
     ),
     height: Math.round(
-      (SWISS_ALTI_REGIONAL_EXTENT.ymax - SWISS_ALTI_REGIONAL_EXTENT.ymin) /
+      (region.extent.ymax - region.extent.ymin) /
         anchorMetadata.nativeResolution,
     ),
-    sourceCount: SWISS_ALTI_COGS.length,
+    regionId: region.id,
+    sourceCount: region.cogs.length,
     sourcePixelCount:
-      SWISS_ALTI_COGS.length * anchorMetadata.width * anchorMetadata.height,
+      region.cogs.length * anchorMetadata.width * anchorMetadata.height,
   };
 
   return {
     metadata,
+    region,
     withSource,
     dispose() {
       disposed = true;
@@ -554,7 +557,7 @@ export function createSwissAltiElevationLayer({
   spatialReference,
   tileInfo,
 }: CreateSwissAltiElevationLayerOptions): SwissAltiElevationLayer {
-  const { metadata } = preparedCatalog;
+  const { metadata, region } = preparedCatalog;
   const nativeLevel = lods.length - 1;
   const nativeTileSpan = ELEVATION_TILE_SIZE * metadata.nativeResolution;
 
@@ -587,7 +590,7 @@ export function createSwissAltiElevationLayer({
       const size = (this.tileInfo.size?.[0] ?? ELEVATION_TILE_SIZE) + 1;
       const values = new Float32Array(size * size);
       values.fill(ELEVATION_NO_DATA_VALUE);
-      const sources = resolveSwissAltiCogs(requestExtent);
+      const sources = resolveSwissAltiCogs(region, requestExtent);
 
       const tasks = sources.map((cog) => async () => {
         const window = mosaicWindow(requestExtent, cog.extent, size);
@@ -656,7 +659,7 @@ export function createSwissAltiElevationLayer({
   });
 
   const layerInstance = new SwissAltiElevationLayerClass({
-    title: `${metadata.sourceCount} SwissALTI3D COGs · regional terrain`,
+    title: `${region.label} · ${metadata.sourceCount} SwissALTI3D COGs`,
     spatialReference,
     tileInfo,
     fullExtent,
@@ -670,26 +673,10 @@ export function createSwissAltiElevationLayer({
   layerInstance.auditRegionalCoverage = async (
     options: CoverageAuditOptions = {},
   ) => {
-    const probes = [
-      {
-        id: "interior",
-        ...tileAtCoordinate(2_610_500, 1_092_500),
-        expectSources: 1,
-        expectData: true,
-      },
-      {
-        id: "cross-boundary",
-        ...tileAtCoordinate(2_611_000, 1_092_500),
-        expectSources: 2,
-        expectData: true,
-      },
-      {
-        id: "intentional-hole",
-        ...tileAtCoordinate(2_616_500, 1_090_500),
-        expectSources: 0,
-        expectData: false,
-      },
-    ];
+    const probes = region.validationProbes.map((probe) => ({
+      ...probe,
+      ...tileAtCoordinate(probe.x, probe.y),
+    }));
     let completedProbes = 0;
     let elevationMin = Number.POSITIVE_INFINITY;
     let elevationMax = Number.NEGATIVE_INFINITY;
@@ -704,7 +691,7 @@ export function createSwissAltiElevationLayer({
         probe.column,
       );
       if (!bounds) throw new Error(`The ${probe.id} probe has no tile bounds.`);
-      const sourceCount = resolveSwissAltiCogs({
+      const sourceCount = resolveSwissAltiCogs(region, {
         xmin: bounds[0],
         ymin: bounds[1],
         xmax: bounds[2],

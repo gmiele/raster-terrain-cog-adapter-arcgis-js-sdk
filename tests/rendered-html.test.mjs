@@ -32,6 +32,7 @@ test("server-renders both Raster Terrain Lab modes", async () => {
   assert.match(html, /Raster Terrain Lab/);
   assert.match(html, /Cloud imagery/);
   assert.match(html, /SwissALTI terrain/);
+  assert.match(html, /Zürich/);
   assert.match(html, /Bring a cloud raster into 3D/);
   assert.match(html, /ArcGIS SDK 5\.1/);
 });
@@ -50,7 +51,7 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.match(adapter, /ImageryTileLayer/);
   assert.match(adapter, /fetchPixels/);
   assert.match(page, /Ground validation/);
-  assert.match(page, /Regional ground verified/);
+  assert.match(page, /ground verified/);
   assert.match(page, /interior, seam, and no-data probes passed/);
   assert.doesNotMatch(page, /queryElevation|center elevation/i);
 });
