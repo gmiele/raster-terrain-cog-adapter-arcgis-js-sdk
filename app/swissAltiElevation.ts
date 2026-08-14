@@ -89,6 +89,7 @@ export type SwissAltiMetadata = SourceMetadata & {
 
 export type PreparedSwissAltiCatalog = {
   dispose: () => void;
+  lifetimeSignal?: AbortSignal;
   metadata: SwissAltiMetadata;
   region: SwissAltiRegionCatalog;
   withSource: <T>(
@@ -103,6 +104,12 @@ type ElevationTileData = {
   width: number;
   height: number;
   noDataValue: number;
+};
+
+type OverviewChildTile = {
+  columnOffset: number;
+  data: ElevationTileData;
+  rowOffset: number;
 };
 
 export type RegionalCoverageAudit = {
@@ -177,9 +184,8 @@ const ELEVATION_TILE_SIZE = 256;
 const MAX_SOURCE_CACHE_SIZE = 32;
 const SOURCE_FETCH_CONCURRENCY = 6;
 const MAX_COARSE_FACTOR = 32;
-const MAX_OUTPUT_TILE_CACHE_SIZE = 24;
-const OVERVIEW_SAMPLE_SIZE = 8;
-const MAX_OVERVIEW_SOURCE_ATTEMPTS = 4;
+const MAX_OUTPUT_TILE_CACHE_SIZE = 48;
+const OVERVIEW_CHILD_CONCURRENCY = 2;
 const COORDINATE_TOLERANCE = 1e-6;
 
 function abortError(signal?: AbortSignal) {
@@ -440,7 +446,7 @@ export async function prepareSwissAltiCatalog(
     }
   };
 
-  const getEntry = (cog: SwissAltiCog, requestSignal?: AbortSignal) => {
+  const getEntry = (cog: SwissAltiCog) => {
     const existing = cache.get(cog.cacheKey);
     if (existing) return existing;
 
@@ -452,7 +458,7 @@ export async function prepareSwissAltiCatalog(
     entry.promise = loadSource(
       ImageryTileLayer,
       cog,
-      requestSignal,
+      signal,
     ).then((source) => {
       if (disposed) source.layer.destroy?.();
       return source;
@@ -471,7 +477,7 @@ export async function prepareSwissAltiCatalog(
   ) => {
     assertNotAborted(requestSignal);
     if (disposed) throw new Error("The regional COG catalog was disposed.");
-    const entry = getEntry(cog, requestSignal);
+    const entry = getEntry(cog);
     entry.active += 1;
     entry.lastUsed = ++accessCounter;
 
@@ -510,6 +516,7 @@ export async function prepareSwissAltiCatalog(
   };
 
   return {
+    lifetimeSignal: signal,
     metadata,
     region,
     withSource,
@@ -559,6 +566,115 @@ function summarizeTile(data: ElevationTileData) {
   return { validSampleCount, elevationMin, elevationMax };
 }
 
+export function aggregateElevationChildren(
+  children: OverviewChildTile[],
+  size: number,
+  coverageWidthInSamples: number,
+  coverageHeightInSamples: number,
+): ElevationTileData {
+  const values = new Float32Array(size * size);
+  values.fill(ELEVATION_NO_DATA_VALUE);
+  if (children.length === 0) {
+    return {
+      values,
+      width: size,
+      height: size,
+      noDataValue: ELEVATION_NO_DATA_VALUE,
+    };
+  }
+
+  const childByOffset = new Map(
+    children.map((child) => [
+      `${child.rowOffset}/${child.columnOffset}`,
+      child.data,
+    ]),
+  );
+  const childSpan = size - 1;
+  const compositeMax = childSpan * 2;
+
+  const compositeValue = (globalRow: number, globalColumn: number) => {
+    const rowOffsets =
+      globalRow === childSpan ? [0, 1] : [globalRow < childSpan ? 0 : 1];
+    const columnOffsets =
+      globalColumn === childSpan
+        ? [0, 1]
+        : [globalColumn < childSpan ? 0 : 1];
+    let sum = 0;
+    let count = 0;
+
+    for (const rowOffset of rowOffsets) {
+      for (const columnOffset of columnOffsets) {
+        const child = childByOffset.get(`${rowOffset}/${columnOffset}`);
+        if (!child) continue;
+        const localRow = globalRow - rowOffset * childSpan;
+        const localColumn = globalColumn - columnOffset * childSpan;
+        const value = child.values[localRow * child.width + localColumn];
+        if (value === child.noDataValue || !Number.isFinite(value)) continue;
+        sum += value;
+        count += 1;
+      }
+    }
+
+    return count > 0 ? sum / count : null;
+  };
+
+  let elevationSum = 0;
+  let validSampleCount = 0;
+
+  for (let row = 0; row < size; row += 1) {
+    const firstGlobalRow = Math.min(row * 2, compositeMax);
+    const globalRows =
+      firstGlobalRow < compositeMax
+        ? [firstGlobalRow, firstGlobalRow + 1]
+        : [firstGlobalRow];
+
+    for (let column = 0; column < size; column += 1) {
+      const firstGlobalColumn = Math.min(column * 2, compositeMax);
+      const globalColumns =
+        firstGlobalColumn < compositeMax
+          ? [firstGlobalColumn, firstGlobalColumn + 1]
+          : [firstGlobalColumn];
+      let sum = 0;
+      let count = 0;
+
+      for (const globalRow of globalRows) {
+        for (const globalColumn of globalColumns) {
+          const value = compositeValue(globalRow, globalColumn);
+          if (value === null) continue;
+          sum += value;
+          count += 1;
+        }
+      }
+
+      if (count === 0) continue;
+      const elevation = sum / count;
+      values[row * size + column] = elevation;
+      elevationSum += elevation;
+      validSampleCount += 1;
+    }
+  }
+
+  // At national-cache levels where the regional catalog is smaller than a
+  // terrain sample, retain its COG-derived aggregate as a bootstrap surface.
+  // The scene clipping area limits this generalized parent to the catalog
+  // extent; child tiles progressively restore detail and intentional holes.
+  if (
+    validSampleCount > 0 &&
+    (validSampleCount < 4 ||
+      coverageWidthInSamples < 2 ||
+      coverageHeightInSamples < 2)
+  ) {
+    values.fill(elevationSum / validSampleCount);
+  }
+
+  return {
+    values,
+    width: size,
+    height: size,
+    noDataValue: ELEVATION_NO_DATA_VALUE,
+  };
+}
+
 export function createSwissAltiElevationLayer({
   BaseElevationLayer,
   Extent,
@@ -585,63 +701,7 @@ export function createSwissAltiElevationLayer({
   };
   const nativeLevel = nativeLod.level;
   const outputTileCache = new Map<string, Promise<ElevationTileData>>();
-  const overviewSampleCache = new Map<string, Promise<number | null>>();
-
-  const sampleOverviewElevation = (
-    cog: SwissAltiCog,
-    layerSpatialReference: ArcGISObject,
-    signal?: AbortSignal,
-  ) => {
-    const cached = overviewSampleCache.get(cog.cacheKey);
-    if (cached) return cached;
-
-    const samplePromise = preparedCatalog.withSource(
-      cog,
-      signal,
-      async ({ layer, metadata: sourceMetadata }) => {
-        const extent = new Extent({
-          ...cog.extent,
-          spatialReference: layerSpatialReference,
-        });
-        const result = await layer.fetchPixels!(
-          extent,
-          OVERVIEW_SAMPLE_SIZE,
-          OVERVIEW_SAMPLE_SIZE,
-          { signal },
-        );
-        const pixelBlock = result.pixelBlock;
-        const pixels = pixelBlock?.pixels?.[0];
-        if (!pixelBlock || !pixels) return null;
-
-        const mask = pixelBlock.mask;
-        const sourceNoData =
-          pixelBlock.statistics?.[0]?.noDataValue ?? sourceMetadata.noDataValue;
-        let sum = 0;
-        let validCount = 0;
-
-        for (let index = 0; index < pixels.length; index += 1) {
-          const value = Number(pixels[index]);
-          const isValid =
-            (!mask || Number(mask[index]) > 0) &&
-            Number.isFinite(value) &&
-            value !== sourceNoData &&
-            value !== SWISS_ALTI_NO_DATA_VALUE;
-          if (!isValid) continue;
-          sum += value;
-          validCount += 1;
-        }
-
-        return validCount > 0 ? sum / validCount : null;
-      },
-    );
-    overviewSampleCache.set(cog.cacheKey, samplePromise);
-    void samplePromise.catch(() => {
-      if (overviewSampleCache.get(cog.cacheKey) === samplePromise) {
-        overviewSampleCache.delete(cog.cacheKey);
-      }
-    });
-    return samplePromise;
-  };
+  const lodByLevel = new Map(lods.map((lod) => [lod.level, lod]));
 
   const SwissAltiElevationLayerClass = BaseElevationLayer.createSubclass({
     declaredClass: "raster-terrain-lab.RegionalCogElevationLayer",
@@ -661,6 +721,10 @@ export function createSwissAltiElevationLayer({
       if (!this.getTileBounds) {
         throw new Error("Elevation tile bounds are unavailable.");
       }
+      const tileSignal =
+        tilingProfile === "elevation-suisse"
+          ? preparedCatalog.lifetimeSignal
+          : options?.signal;
 
       const bounds = this.getTileBounds(level, row, column);
       const requestExtent: ExtentLike = {
@@ -681,7 +745,7 @@ export function createSwissAltiElevationLayer({
 
           await preparedCatalog.withSource(
             cog,
-            options?.signal,
+            tileSignal,
             async ({ layer, metadata: sourceMetadata }) => {
               const extent = new Extent({
                 ...window.extent,
@@ -691,7 +755,7 @@ export function createSwissAltiElevationLayer({
                 extent,
                 window.width,
                 window.height,
-                { signal: options?.signal },
+                { signal: tileSignal },
               );
               const pixelBlock = result.pixelBlock;
               const pixels = pixelBlock?.pixels?.[0];
@@ -737,9 +801,9 @@ export function createSwissAltiElevationLayer({
       };
 
       const buildOverviewTile = async () => {
-        const values = new Float32Array(size * size);
-        values.fill(ELEVATION_NO_DATA_VALUE);
         if (sources.length === 0) {
+          const values = new Float32Array(size * size);
+          values.fill(ELEVATION_NO_DATA_VALUE);
           return {
             values,
             width: size,
@@ -748,43 +812,53 @@ export function createSwissAltiElevationLayer({
           };
         }
 
-        const anchorSource = sources.find(
-          (cog) => cog.cacheKey === region.anchorCog.cacheKey,
-        );
-        const sourceCandidates = [
-          anchorSource,
-          sources[Math.floor(sources.length / 2)],
-          sources[0],
-          sources.at(-1),
-        ].filter((cog): cog is SwissAltiCog => Boolean(cog));
-        const sampledSources = [
-          ...new Map(sourceCandidates.map((cog) => [cog.cacheKey, cog])).values(),
-        ].slice(0, MAX_OVERVIEW_SOURCE_ATTEMPTS);
-        let representativeElevation: number | null = null;
-
-        for (const cog of sampledSources) {
-          representativeElevation = await sampleOverviewElevation(
-            cog,
-            this.spatialReference,
-            options?.signal,
+        const childLevel = level + 1;
+        const childRequests = [
+          { rowOffset: 0, columnOffset: 0 },
+          { rowOffset: 0, columnOffset: 1 },
+          { rowOffset: 1, columnOffset: 0 },
+          { rowOffset: 1, columnOffset: 1 },
+        ].filter(({ rowOffset, columnOffset }) => {
+          const childBounds = this.getTileBounds!(
+            childLevel,
+            row * 2 + rowOffset,
+            column * 2 + columnOffset,
           );
-          if (
-            representativeElevation !== null &&
-            Number.isFinite(representativeElevation)
-          ) {
-            break;
-          }
-        }
-        if (representativeElevation !== null) {
-          values.fill(representativeElevation);
-        }
+          return (
+            resolveSwissAltiCogs(region, {
+              xmin: childBounds[0],
+              ymin: childBounds[1],
+              xmax: childBounds[2],
+              ymax: childBounds[3],
+            }).length > 0
+          );
+        });
+        const childTasks = childRequests.map(
+          ({ rowOffset, columnOffset }) => async () => ({
+            rowOffset,
+            columnOffset,
+            data: await this.fetchTile(
+              childLevel,
+              row * 2 + rowOffset,
+              column * 2 + columnOffset,
+              { signal: tileSignal },
+            ),
+          }),
+        );
+        const children = await runWithConcurrency(
+          childTasks,
+          OVERVIEW_CHILD_CONCURRENCY,
+        );
+        const lod = lodByLevel.get(level);
+        if (!lod) throw new Error(`Elevation LOD ${level} is unavailable.`);
+        const coverage = intersectExtents(requestExtent, metadata.extent);
 
-        return {
-          values,
-          width: size,
-          height: size,
-          noDataValue: ELEVATION_NO_DATA_VALUE,
-        };
+        return aggregateElevationChildren(
+          children,
+          size,
+          coverage ? (coverage.xmax - coverage.xmin) / lod.resolution : 0,
+          coverage ? (coverage.ymax - coverage.ymin) / lod.resolution : 0,
+        );
       };
 
       const buildTile =
@@ -822,7 +896,6 @@ export function createSwissAltiElevationLayer({
 
     disposeSource() {
       outputTileCache.clear();
-      overviewSampleCache.clear();
       preparedCatalog.dispose();
     },
   });
@@ -856,7 +929,7 @@ export function createSwissAltiElevationLayer({
     }));
     const overviewLevels =
       tilingProfile === "elevation-suisse"
-        ? [lods[0].level, ELEVATION_SUISSE_DETAIL_LOD - 1]
+        ? [ELEVATION_SUISSE_DETAIL_LOD - 1, lods[0].level]
         : [];
     const totalProbeCount = probes.length + overviewLevels.length;
     let completedProbes = 0;

@@ -815,7 +815,11 @@ export default function Home() {
         // Navigation cancellation is expected when the user moves the camera.
       }
 
-      setTerrainStatus("Checking interior, seam, and no-data terrain probes…");
+      setTerrainStatus(
+        usesElevationSuisseGrid
+          ? "Building the LOD 13 COG mosaic and recursive cache overviews…"
+          : "Checking interior, seam, and no-data terrain probes…",
+      );
       const audit = await terrainLayer.auditRegionalCoverage({
         signal: abortController.signal,
         onProgress: (completed, total) => {
