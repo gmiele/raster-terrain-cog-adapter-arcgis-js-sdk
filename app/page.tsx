@@ -149,9 +149,26 @@ type RasterColorRamps = {
   createColorRamp: (colors: unknown) => ArcGISObject;
 };
 
+type ViewshedAnalysis = ArcGISObject & {
+  clear?: () => void;
+};
+
+type ViewshedAnalysisView = ArcGISObject & {
+  interactive?: boolean;
+  place?: (options?: { signal?: AbortSignal }) => Promise<unknown>;
+  selectedViewshed?: unknown;
+};
+
 type ArcGISSceneElement = HTMLElement & {
+  analyses?: {
+    add?: (analysis: ArcGISObject) => void;
+    remove?: (analysis: ArcGISObject) => void;
+  };
   componentOnReady: () => Promise<ArcGISSceneElement>;
   viewOnReady: () => Promise<void>;
+  whenAnalysisView?: (
+    analysis: ArcGISObject,
+  ) => Promise<ViewshedAnalysisView>;
   clippingArea?: ArcGISObject;
   environment?: Record<string, unknown>;
   map?: ArcGISObject | null;
@@ -261,6 +278,10 @@ function getErrorMessage(error: unknown) {
   return "The raster could not be opened.";
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 function getHost(url: string) {
   try {
     return new URL(url).hostname;
@@ -291,6 +312,10 @@ export default function Home() {
   const areaMeasurementRef = useRef<ArcGISMeasurementElement>(null);
   const lineOfSightExpandRef = useRef<ArcGISExpandElement>(null);
   const lineOfSightRef = useRef<ArcGISLineOfSightElement>(null);
+  const viewshedExpandRef = useRef<ArcGISExpandElement>(null);
+  const viewshedAnalysisRef = useRef<ViewshedAnalysis | null>(null);
+  const viewshedAnalysisViewRef = useRef<ViewshedAnalysisView | null>(null);
+  const viewshedPlacementRef = useRef<AbortController | null>(null);
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
@@ -325,6 +350,12 @@ export default function Home() {
   const [terrainOverlayVisible, setTerrainOverlayVisible] = useState(true);
   const [terrainStatus, setTerrainStatus] = useState(
     "Preparing local EPSG:2056 scene…",
+  );
+  const [viewshedState, setViewshedState] = useState<
+    "idle" | "ready" | "placing" | "error"
+  >("idle");
+  const [viewshedStatus, setViewshedStatus] = useState(
+    "Waiting for the terrain…",
   );
   const [terrainValidation, setTerrainValidation] = useState({
     source: "Pending",
@@ -417,6 +448,71 @@ export default function Home() {
       );
     } catch {
       // Navigation cancellation is expected when the user moves the camera.
+    }
+  }, []);
+
+  const cancelViewshedPlacement = useCallback(() => {
+    const controller = viewshedPlacementRef.current;
+    if (!controller) return;
+
+    viewshedPlacementRef.current = null;
+    controller.abort();
+    setViewshedState(viewshedAnalysisViewRef.current ? "ready" : "idle");
+    setViewshedStatus("Viewshed placement cancelled.");
+  }, []);
+
+  const clearViewsheds = useCallback(() => {
+    const controller = viewshedPlacementRef.current;
+    viewshedPlacementRef.current = null;
+    controller?.abort();
+
+    viewshedAnalysisRef.current?.clear?.();
+    if (viewshedAnalysisViewRef.current) {
+      viewshedAnalysisViewRef.current.selectedViewshed = null;
+    }
+
+    const ready = Boolean(viewshedAnalysisViewRef.current);
+    setViewshedState(ready ? "ready" : "idle");
+    setViewshedStatus(
+      ready
+        ? "Viewsheds cleared. Place an observer and target to create another."
+        : "Waiting for the terrain…",
+    );
+  }, []);
+
+  const startViewshedPlacement = useCallback(async () => {
+    const analysisView = viewshedAnalysisViewRef.current;
+    if (!analysisView?.place) {
+      setViewshedState("error");
+      setViewshedStatus("The viewshed analysis is not ready.");
+      return;
+    }
+
+    viewshedPlacementRef.current?.abort();
+    const controller = new AbortController();
+    viewshedPlacementRef.current = controller;
+    setViewshedState("placing");
+    setViewshedStatus(
+      "Click the terrain to place the observer, then click its target.",
+    );
+
+    try {
+      await analysisView.place({ signal: controller.signal });
+      if (viewshedPlacementRef.current !== controller) return;
+      viewshedPlacementRef.current = null;
+      setViewshedState("ready");
+      setViewshedStatus("Viewshed created. Place another or clear the result.");
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        isAbortError(error) ||
+        viewshedPlacementRef.current !== controller
+      ) {
+        return;
+      }
+      viewshedPlacementRef.current = null;
+      setViewshedState("error");
+      setViewshedStatus(`Viewshed placement failed: ${getErrorMessage(error)}`);
     }
   }, []);
 
@@ -1029,6 +1125,116 @@ export default function Home() {
   }, [mode, sdkReady, terrainRegion]);
 
   useEffect(() => {
+    if (!sdkReady || !isTerrainMode(mode)) return;
+
+    const sceneElement = sceneElementRef.current;
+    const viewshedExpand = viewshedExpandRef.current;
+    const arcgis = window.$arcgis;
+    if (!sceneElement || !viewshedExpand || !arcgis) return;
+
+    if (
+      terrainState !== "ready" ||
+      !terrainLayerRef.current ||
+      sceneElement.view !== viewRef.current
+    ) {
+      setViewshedState("idle");
+      setViewshedStatus("Waiting for the terrain…");
+      return;
+    }
+
+    let cancelled = false;
+    let analysis: ViewshedAnalysis | null = null;
+    let analysisView: ViewshedAnalysisView | null = null;
+
+    const handleExpandChange = (event: Event) => {
+      const propertyEvent = event as CustomEvent<{ name?: string }>;
+      if (
+        propertyEvent.detail?.name === "expanded" &&
+        !viewshedExpand.expanded
+      ) {
+        clearViewsheds();
+      }
+    };
+
+    viewshedExpand.addEventListener(
+      "arcgisPropertyChange",
+      handleExpandChange,
+    );
+
+    const initializeViewshed = async () => {
+      setViewshedState("idle");
+      setViewshedStatus("Preparing the viewshed analysis…");
+
+      try {
+        await sceneElement.viewOnReady();
+        if (cancelled) return;
+
+        if (!sceneElement.analyses?.add || !sceneElement.whenAnalysisView) {
+          throw new Error("This scene does not expose the analysis API.");
+        }
+
+        const ViewshedAnalysis = (await arcgis.import(
+          "@arcgis/core/analysis/ViewshedAnalysis.js",
+        )) as ArcGISConstructor;
+        if (cancelled) return;
+
+        analysis = new ViewshedAnalysis() as ViewshedAnalysis;
+        sceneElement.analyses.add(analysis);
+        analysisView = await sceneElement.whenAnalysisView(analysis);
+        if (cancelled) return;
+
+        analysisView.interactive = true;
+        viewshedAnalysisRef.current = analysis;
+        viewshedAnalysisViewRef.current = analysisView;
+        setViewshedState("ready");
+        setViewshedStatus(
+          "Place an observer and target to calculate a viewshed.",
+        );
+      } catch (error) {
+        if (cancelled) return;
+        if (analysis) {
+          analysis.clear?.();
+          sceneElement.analyses?.remove?.(analysis);
+          analysis.destroy?.();
+          analysis = null;
+        }
+        analysisView = null;
+        console.error("Viewshed analysis initialization failed", error);
+        setViewshedState("error");
+        setViewshedStatus(`Viewshed unavailable: ${getErrorMessage(error)}`);
+      }
+    };
+
+    void initializeViewshed();
+
+    return () => {
+      cancelled = true;
+      viewshedExpand.removeEventListener(
+        "arcgisPropertyChange",
+        handleExpandChange,
+      );
+
+      const controller = viewshedPlacementRef.current;
+      viewshedPlacementRef.current = null;
+      controller?.abort();
+
+      if (analysis) {
+        analysis.clear?.();
+        sceneElement.analyses?.remove?.(analysis);
+        analysis.destroy?.();
+      }
+      if (analysisView) analysisView.selectedViewshed = null;
+
+      if (viewshedAnalysisRef.current === analysis) {
+        viewshedAnalysisRef.current = null;
+      }
+      if (viewshedAnalysisViewRef.current === analysisView) {
+        viewshedAnalysisViewRef.current = null;
+      }
+    };
+  }, [clearViewsheds, mode, sdkReady, terrainRegion, terrainState]);
+
+  useEffect(() => {
     terrainOverlayOpacityRef.current = terrainOverlayOpacity;
     if (terrainOverlayLayerRef.current) {
       terrainOverlayLayerRef.current.opacity = terrainOverlayOpacity / 100;
@@ -1202,6 +1408,77 @@ export default function Home() {
                   label: "Line of sight",
                   suppressHydrationWarning: true,
                 } as ArcGISLineOfSightAttributes),
+              ),
+              createElement(
+                "arcgis-expand",
+                {
+                  key: "terrain-viewshed-expand",
+                  ref: viewshedExpandRef,
+                  slot: "top-right",
+                  group: "terrain-tools",
+                  icon: "view-visible",
+                  label: "Viewshed",
+                  mode: "floating",
+                  suppressHydrationWarning: true,
+                } as ArcGISExpandAttributes,
+                createElement(
+                  "div",
+                  {
+                    className: "viewshed-tool-panel",
+                    role: "group",
+                    "aria-label": "Viewshed analysis",
+                  },
+                  createElement(
+                    "p",
+                    { className: "viewshed-tool__heading" },
+                    "Viewshed",
+                  ),
+                  createElement(
+                    "p",
+                    {
+                      className: "viewshed-tool__status",
+                      role: "status",
+                      "aria-live": "polite",
+                    },
+                    viewshedStatus,
+                  ),
+                  createElement(
+                    "div",
+                    { className: "viewshed-tool__actions" },
+                    viewshedState === "placing"
+                      ? createElement(
+                          "button",
+                          {
+                            className:
+                              "viewshed-tool__button viewshed-tool__button--primary",
+                            type: "button",
+                            onClick: cancelViewshedPlacement,
+                          },
+                          "Cancel placement",
+                        )
+                      : createElement(
+                          "button",
+                          {
+                            className:
+                              "viewshed-tool__button viewshed-tool__button--primary",
+                            type: "button",
+                            disabled: viewshedState !== "ready",
+                            onClick: () => void startViewshedPlacement(),
+                          },
+                          "Place viewshed",
+                        ),
+                    createElement(
+                      "button",
+                      {
+                        className: "viewshed-tool__button",
+                        type: "button",
+                        disabled: viewshedState === "idle",
+                        onClick: clearViewsheds,
+                      },
+                      "Clear",
+                    ),
+                  ),
+                ),
               ),
             ]),
       )
