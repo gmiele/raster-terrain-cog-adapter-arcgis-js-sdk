@@ -721,7 +721,11 @@ export default function Home() {
       sceneElement.map.ground = ground;
 
       terrainLayerRef.current = terrainLayer;
-      terrainExtentRef.current = fullExtent;
+      // Keep the complete catalog extent for terrain coverage and clipping, but
+      // frame the camera around the selected region's known COG-covered focus.
+      // The full rectangular bounds include intentional no-data holes and are
+      // too broad to produce a useful initial terrain view.
+      terrainExtentRef.current = initialExtent;
       const groundLayerCount = ground.layers?.length ?? 0;
       setTerrainValidation((current) => ({
         ...current,
@@ -833,7 +837,7 @@ export default function Home() {
         elevationRange: `${audit.elevationMin.toFixed(1)}–${audit.elevationMax.toFixed(1)} m`,
         terrainSamples: `${audit.validSampleCount.toLocaleString()} / ${audit.expectedSampleCount.toLocaleString()}`,
       }));
-      setTerrainStatus("Framing the complete regional terrain extent…");
+      setTerrainStatus(`Framing the ${terrainRegion.label} terrain focus…`);
       await frameTerrain();
       if (!isCurrent()) return;
 

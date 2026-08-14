@@ -77,6 +77,10 @@ test("switches one cached virtual elevation mosaic between regional catalogs", a
   assert.match(page, /setTerrainRegionId/);
   assert.match(page, /prepareSwissAltiCatalog\(\s*ImageryTileLayer,\s*terrainRegion,/);
   assert.match(page, /terrainRegion\.initialExtent/);
+  assert.match(page, /sceneElement\.clippingArea = fullExtent/);
+  assert.match(page, /terrainExtentRef\.current = initialExtent/);
+  assert.doesNotMatch(page, /terrainExtentRef\.current = fullExtent/);
+  assert.match(page, /Framing the \$\{terrainRegion\.label\} terrain focus/);
   assert.match(page, /key: `terrain-scene-\$\{mode\}-\$\{terrainRegion\.id\}`/);
   assert.match(page, /terrainTilingProfile/);
   assert.match(page, /layers: \[terrainLayer\]/);
