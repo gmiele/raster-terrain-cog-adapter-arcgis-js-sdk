@@ -843,7 +843,9 @@ export default function Home() {
 
       setTerrainState("ready");
       setTerrainStatus(
-        `${terrainRegion.label} ground verified · interior, seam, and no-data probes passed`,
+        usesElevationSuisseGrid
+          ? `${terrainRegion.label} ground verified · cache overviews and COG detail probes passed`
+          : `${terrainRegion.label} ground verified · interior, seam, and no-data probes passed`,
       );
     };
 

@@ -36,10 +36,15 @@ test("routes the third mode through a COG-only custom ground", async () => {
   assert.match(page, /loadElevationSuisseScheme\(abortController\.signal\)/);
   assert.match(page, /tilingProfile: terrainTilingProfile/);
   assert.match(page, /layers: \[terrainLayer\]/);
+  assert.match(page, /cache overviews and COG detail probes passed/);
   assert.doesNotMatch(page, /new ElevationLayer|@arcgis\/core\/layers\/ElevationLayer/);
   assert.match(adapter, /tilingProfile === "elevation-suisse"/);
   assert.match(adapter, /outputTileCache/);
   assert.match(adapter, /MAX_OUTPUT_TILE_CACHE_SIZE/);
+  assert.match(adapter, /level < ELEVATION_SUISSE_DETAIL_LOD/);
+  assert.match(adapter, /sampleOverviewElevation/);
+  assert.match(adapter, /values\.fill\(representativeElevation\)/);
+  assert.match(adapter, /cache-grid LOD \$\{level\} overview returned no terrain/);
   assert.match(adapter, /resolveSwissAltiCogs\(region, requestExtent\)/);
   assert.match(source, /return region\.cogs\.filter/);
   assert.doesNotMatch(source, /for \(let northKm = minNorthKm/);
