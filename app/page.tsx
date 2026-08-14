@@ -208,6 +208,10 @@ type ArcGISLineOfSightElement = HTMLElement & {
   state?: "created" | "creating" | "disabled" | "ready";
 };
 
+type ArcGISClearableElement = HTMLElement & {
+  clear?: () => Promise<void>;
+};
+
 type ArcGISExpandElement = HTMLElement & {
   expanded?: boolean;
 };
@@ -241,6 +245,27 @@ type ArcGISLineOfSightAttributes = DetailedHTMLProps<
   HTMLAttributes<ArcGISLineOfSightElement>,
   ArcGISLineOfSightElement
 > & {
+  label?: string;
+};
+
+type ArcGISVolumeMeasurementAttributes = DetailedHTMLProps<
+  HTMLAttributes<ArcGISMeasurementElement>,
+  ArcGISMeasurementElement
+> & {
+  areaDisplayUnit?: "metric" | "imperial";
+  elevationDisplayUnit?: "metric" | "imperial";
+  elevationInputUnit?: "meters" | "feet";
+  label?: string;
+  perimeterDisplayUnit?: "metric" | "imperial";
+  volumeDisplayUnit?: "metric" | "imperial";
+};
+
+type ArcGISElevationProfileAttributes = DetailedHTMLProps<
+  HTMLAttributes<ArcGISClearableElement>,
+  ArcGISClearableElement
+> & {
+  distanceUnit?: "metric" | "imperial";
+  elevationUnit?: "metric" | "imperial";
   label?: string;
 };
 
@@ -316,6 +341,10 @@ export default function Home() {
   const viewshedAnalysisRef = useRef<ViewshedAnalysis | null>(null);
   const viewshedAnalysisViewRef = useRef<ViewshedAnalysisView | null>(null);
   const viewshedPlacementRef = useRef<AbortController | null>(null);
+  const volumeMeasurementExpandRef = useRef<ArcGISExpandElement>(null);
+  const volumeMeasurementRef = useRef<ArcGISMeasurementElement>(null);
+  const elevationProfileExpandRef = useRef<ArcGISExpandElement>(null);
+  const elevationProfileRef = useRef<ArcGISClearableElement>(null);
   const mapRef = useRef<ArcGISObject | null>(null);
   const viewRef = useRef<ArcGISObject | null>(null);
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
@@ -1235,6 +1264,53 @@ export default function Home() {
   }, [clearViewsheds, mode, sdkReady, terrainRegion, terrainState]);
 
   useEffect(() => {
+    if (!sdkReady || !isTerrainMode(mode)) return;
+
+    const volumeMeasurementExpand = volumeMeasurementExpandRef.current;
+    const volumeMeasurement = volumeMeasurementRef.current;
+    const elevationProfileExpand = elevationProfileExpandRef.current;
+    const elevationProfile = elevationProfileRef.current;
+    if (
+      !volumeMeasurementExpand ||
+      !volumeMeasurement ||
+      !elevationProfileExpand ||
+      !elevationProfile
+    ) {
+      return;
+    }
+
+    const tools: Array<{
+      expand: ArcGISExpandElement;
+      tool: ArcGISClearableElement;
+    }> = [
+      { expand: volumeMeasurementExpand, tool: volumeMeasurement },
+      { expand: elevationProfileExpand, tool: elevationProfile },
+    ];
+
+    const removeListeners = tools.map(({ expand, tool }) => {
+      const handleExpandChange = (event: Event) => {
+        const propertyEvent = event as CustomEvent<{ name?: string }>;
+        if (
+          propertyEvent.detail?.name === "expanded" &&
+          !expand.expanded
+        ) {
+          void tool.clear?.();
+        }
+      };
+
+      expand.addEventListener("arcgisPropertyChange", handleExpandChange);
+      return () => {
+        expand.removeEventListener("arcgisPropertyChange", handleExpandChange);
+      };
+    });
+
+    return () => {
+      removeListeners.forEach((removeListener) => removeListener());
+      tools.forEach(({ tool }) => void tool.clear?.());
+    };
+  }, [mode, sdkReady, terrainRegion]);
+
+  useEffect(() => {
     terrainOverlayOpacityRef.current = terrainOverlayOpacity;
     if (terrainOverlayLayerRef.current) {
       terrainOverlayLayerRef.current.opacity = terrainOverlayOpacity / 100;
@@ -1479,6 +1555,53 @@ export default function Home() {
                     ),
                   ),
                 ),
+              ),
+              createElement(
+                "arcgis-expand",
+                {
+                  key: "terrain-volume-measurement-expand",
+                  ref: volumeMeasurementExpandRef,
+                  slot: "top-right",
+                  group: "terrain-tools",
+                  icon: "measure-area",
+                  label: "Volume measurement",
+                  mode: "floating",
+                  suppressHydrationWarning: true,
+                } as ArcGISExpandAttributes,
+                createElement("arcgis-volume-measurement", {
+                  ref: volumeMeasurementRef,
+                  className:
+                    "terrain-analysis-component terrain-analysis-component--volume",
+                  label: "Volume measurement",
+                  areaDisplayUnit: "metric",
+                  elevationDisplayUnit: "metric",
+                  elevationInputUnit: "meters",
+                  perimeterDisplayUnit: "metric",
+                  volumeDisplayUnit: "metric",
+                  suppressHydrationWarning: true,
+                } as ArcGISVolumeMeasurementAttributes),
+              ),
+              createElement(
+                "arcgis-expand",
+                {
+                  key: "terrain-elevation-profile-expand",
+                  ref: elevationProfileExpandRef,
+                  slot: "top-right",
+                  group: "terrain-tools",
+                  icon: "altitude",
+                  label: "Elevation profile",
+                  mode: "floating",
+                  suppressHydrationWarning: true,
+                } as ArcGISExpandAttributes,
+                createElement("arcgis-elevation-profile", {
+                  ref: elevationProfileRef,
+                  className:
+                    "terrain-analysis-component terrain-analysis-component--profile",
+                  label: "Elevation profile",
+                  distanceUnit: "metric",
+                  elevationUnit: "metric",
+                  suppressHydrationWarning: true,
+                } as ArcGISElevationProfileAttributes),
               ),
             ]),
       )

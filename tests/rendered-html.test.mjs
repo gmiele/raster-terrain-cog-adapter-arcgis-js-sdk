@@ -57,7 +57,7 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.doesNotMatch(page, /queryElevation|center elevation/i);
 });
 
-test("nests terrain analysis tools in four grouped expands", async () => {
+test("nests terrain analysis tools in six grouped expands", async () => {
   const page = await readFile(
     new URL("../app/page.tsx", import.meta.url),
     "utf8",
@@ -67,10 +67,14 @@ test("nests terrain analysis tools in four grouped expands", async () => {
   assert.match(page, /key: "terrain-measurement-expand"/);
   assert.match(page, /key: "terrain-line-of-sight-expand"/);
   assert.match(page, /key: "terrain-viewshed-expand"/);
+  assert.match(page, /key: "terrain-volume-measurement-expand"/);
+  assert.match(page, /key: "terrain-elevation-profile-expand"/);
   assert.match(page, /createElement\("arcgis-daylight"/);
   assert.match(page, /createElement\("arcgis-direct-line-measurement-3d"/);
   assert.match(page, /createElement\("arcgis-area-measurement-3d"/);
   assert.match(page, /createElement\("arcgis-line-of-sight"/);
+  assert.match(page, /createElement\("arcgis-volume-measurement"/);
+  assert.match(page, /createElement\("arcgis-elevation-profile"/);
   assert.match(page, /@arcgis\/core\/analysis\/ViewshedAnalysis\.js/);
   assert.match(page, /sceneElement\.analyses\.add\(analysis\)/);
   assert.match(page, /sceneElement\.whenAnalysisView\(analysis\)/);
@@ -85,11 +89,29 @@ test("nests terrain analysis tools in four grouped expands", async () => {
   assert.match(page, /lineOfSight\.clear/);
   assert.match(page, /!viewshedExpand\.expanded/);
   assert.match(page, /clearViewsheds\(\)/);
+  assert.match(page, /volumeMeasurementExpandRef/);
+  assert.match(page, /elevationProfileExpandRef/);
+  assert.match(page, /!expand\.expanded/);
+  assert.match(page, /tool\.clear/);
+  assert.match(page, /areaDisplayUnit: "metric"/);
+  assert.match(page, /volumeDisplayUnit: "metric"/);
+  assert.match(page, /distanceUnit: "metric"/);
+  assert.match(page, /elevationUnit: "metric"/);
   assert.doesNotMatch(page, /createElement\("arcgis-viewshed"/);
   assert.ok(
     page.indexOf('key: "terrain-viewshed-expand"') >
       page.indexOf('key: "terrain-line-of-sight-expand"'),
     "Viewshed should be listed below Line of sight",
+  );
+  assert.ok(
+    page.indexOf('key: "terrain-volume-measurement-expand"') >
+      page.indexOf('key: "terrain-viewshed-expand"'),
+    "Volume measurement should be listed below Viewshed",
+  );
+  assert.ok(
+    page.indexOf('key: "terrain-elevation-profile-expand"') >
+      page.indexOf('key: "terrain-volume-measurement-expand"'),
+    "Elevation profile should be listed below Volume measurement",
   );
   assert.doesNotMatch(page, /new\s+(?:Daylight|DirectLineMeasurement3D|AreaMeasurement3D|LineOfSight)\s*\(/);
 });

@@ -94,6 +94,18 @@ button {
   text-transform: uppercase;
 }
 
+.terrain-analysis-component {
+  display: block;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  background: #fff;
+}
+
+.terrain-analysis-component--profile {
+  width: min(440px, calc(100vw - 32px));
+}
+
 .viewshed-tool-panel {
   width: min(300px, calc(100vw - 32px));
   padding: 14px;
