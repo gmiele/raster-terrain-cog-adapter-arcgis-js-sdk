@@ -23,7 +23,7 @@ async function render() {
   );
 }
 
-test("server-renders both Raster Terrain Lab modes", async () => {
+test("server-renders all three Raster Terrain Lab modes", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -32,6 +32,7 @@ test("server-renders both Raster Terrain Lab modes", async () => {
   assert.match(html, /Raster Terrain Lab/);
   assert.match(html, /Cloud imagery/);
   assert.match(html, /SwissALTI terrain/);
+  assert.match(html, /Swiss cache grid/);
   assert.match(html, /Zürich/);
   assert.match(html, /Bring a cloud raster into 3D/);
   assert.match(html, /ArcGIS JS SDK/);

@@ -16,7 +16,12 @@ import {
   createSwissAltiElevationLayer,
   prepareSwissAltiCatalog,
   type SwissAltiElevationLayer,
+  type SwissAltiTilingProfile,
 } from "./swissAltiElevation";
+import {
+  ELEVATION_SUISSE_DETAIL_LOD,
+  loadElevationSuisseScheme,
+} from "./elevationSuisseScheme";
 import {
   DEFAULT_SWISS_ALTI_REGION,
   getSwissAltiRegion,
@@ -31,9 +36,17 @@ import {
 const DEMO_COG_URL =
   "https://ss6imagery.arcgisonline.com/imagery_sample/landsat8/Bolivia_LC08_L1TP_001069_20190719_MS.tiff";
 
-type AppMode = "imagery" | "terrain";
+type AppMode = "imagery" | "terrain" | "terrain-suisse-grid";
 type LoadState = "starting" | "loading" | "ready" | "error";
 type TerrainOverlayState = "idle" | "loading" | "ready" | "error";
+
+function isTerrainMode(mode: AppMode) {
+  return mode !== "imagery";
+}
+
+function tilingProfileForMode(mode: AppMode): SwissAltiTilingProfile {
+  return mode === "terrain-suisse-grid" ? "elevation-suisse" : "regional";
+}
 
 type ExampleDataset = {
   id: string;
@@ -315,6 +328,7 @@ export default function Home() {
   );
   const [terrainValidation, setTerrainValidation] = useState({
     source: "Pending",
+    tiling: "—",
     groundLayers: "—",
     coverage: "—",
     elevationRange: "—",
@@ -331,6 +345,12 @@ export default function Home() {
   });
   const terrainRegion = getSwissAltiRegion(terrainRegionId);
   const terrainYears = terrainRegion.years.join("–");
+  const terrainTilingProfile = tilingProfileForMode(mode);
+  const usesElevationSuisseGrid =
+    terrainTilingProfile === "elevation-suisse";
+  const terrainTilingLabel = usesElevationSuisseGrid
+    ? "elevation_suisse · 512 px"
+    : "Regional COG · 256 px";
 
   const frameImagery = useCallback(async () => {
     const view = viewRef.current as
@@ -574,6 +594,7 @@ export default function Home() {
       );
       setTerrainValidation({
         source: "Loading",
+        tiling: "Loading",
         groundLayers: "—",
         coverage: "—",
         elevationRange: "—",
@@ -615,6 +636,11 @@ export default function Home() {
         RasterColorRamps,
       ];
 
+      const elevationSuisseScheme = usesElevationSuisseGrid
+        ? await loadElevationSuisseScheme(abortController.signal)
+        : null;
+      if (!isCurrent()) return;
+
       const preparedCatalog = await prepareSwissAltiCatalog(
         ImageryTileLayer,
         terrainRegion,
@@ -625,7 +651,13 @@ export default function Home() {
         return;
       }
       const { metadata } = preparedCatalog;
-      const lods = createElevationLods(metadata);
+      const lods =
+        elevationSuisseScheme?.lods ?? createElevationLods(metadata);
+      const tileSize = elevationSuisseScheme?.size ?? [256, 256];
+      const tileOrigin = elevationSuisseScheme?.origin ?? {
+        x: metadata.extent.xmin,
+        y: metadata.extent.ymax,
+      };
       const spatialReference = new SpatialReference({ wkid: SWISS_ALTI_HORIZONTAL_WKID });
       const fullExtent = new Extent({
         ...metadata.extent,
@@ -636,13 +668,13 @@ export default function Home() {
         spatialReference,
       });
       const tileInfo = new TileInfo({
-        dpi: 96,
-        format: "lerc",
+        dpi: elevationSuisseScheme?.dpi ?? 96,
+        format: elevationSuisseScheme?.format ?? "lerc",
         spatialReference,
-        size: [256, 256],
+        size: tileSize,
         origin: new Point({
-          x: metadata.extent.xmin,
-          y: metadata.extent.ymax,
+          x: tileOrigin.x,
+          y: tileOrigin.y,
           spatialReference,
         }),
         lods,
@@ -650,10 +682,13 @@ export default function Home() {
       setTerrainValidation((current) => ({
         ...current,
         source: `${terrainRegion.label} · ${metadata.sourceCount} aligned COGs`,
+        tiling: terrainTilingLabel,
         sourcePixels: metadata.sourcePixelCount.toLocaleString(),
       }));
       setTerrainStatus(
-        `${terrainRegion.label} grid verified · ${metadata.nativeResolution} m native pixels`,
+        usesElevationSuisseGrid
+          ? `elevation_suisse grid verified · COG values · active LOD 0–${elevationSuisseScheme!.maxLod}`
+          : `${terrainRegion.label} grid verified · ${metadata.nativeResolution} m native pixels`,
       );
 
       const terrainLayer = createSwissAltiElevationLayer({
@@ -664,6 +699,7 @@ export default function Home() {
         preparedCatalog,
         spatialReference,
         tileInfo,
+        tilingProfile: terrainTilingProfile,
       });
 
       const loadTerrainLayer = terrainLayer.load as
@@ -859,7 +895,16 @@ export default function Home() {
       viewRef.current = null;
       mapRef.current = null;
     };
-  }, [frameTerrain, loadCog, mode, sdkReady, terrainRegion]);
+  }, [
+    frameTerrain,
+    loadCog,
+    mode,
+    sdkReady,
+    terrainRegion,
+    terrainTilingLabel,
+    terrainTilingProfile,
+    usesElevationSuisseGrid,
+  ]);
 
   useEffect(() => {
     opacityRef.current = opacity;
@@ -871,7 +916,7 @@ export default function Home() {
   }, [visible]);
 
   useEffect(() => {
-    if (!sdkReady || mode !== "terrain") return;
+    if (!sdkReady || !isTerrainMode(mode)) return;
 
     const measurementExpand = measurementExpandRef.current;
     const directLineMeasurement = directLineMeasurementRef.current;
@@ -943,7 +988,7 @@ export default function Home() {
   }, [mode, sdkReady, terrainRegion]);
 
   useEffect(() => {
-    if (!sdkReady || mode !== "terrain") return;
+    if (!sdkReady || !isTerrainMode(mode)) return;
 
     const lineOfSightExpand = lineOfSightExpandRef.current;
     const lineOfSight = lineOfSightRef.current;
@@ -1040,7 +1085,7 @@ export default function Home() {
               "quality-profile": "high",
             } as ArcGISSceneAttributes)
           : ({
-              key: `terrain-scene-${terrainRegion.id}`,
+              key: `terrain-scene-${mode}-${terrainRegion.id}`,
               ref: sceneElementRef,
               className: "map-view",
               suppressHydrationWarning: true,
@@ -1218,21 +1263,38 @@ export default function Home() {
             SwissALTI terrain
             <span>Experimental</span>
           </button>
+          <button
+            type="button"
+            className={mode === "terrain-suisse-grid" ? "is-active" : ""}
+            onClick={() => setMode("terrain-suisse-grid")}
+            aria-pressed={mode === "terrain-suisse-grid"}
+          >
+            Swiss cache grid
+            <span>Experimental</span>
+          </button>
         </nav>
 
         <section className="intro-block">
           <p className="section-kicker">
-            {mode === "imagery" ? "Cloud imagery viewer" : "Local terrain experiment"}
+            {mode === "imagery"
+              ? "Cloud imagery viewer"
+              : usesElevationSuisseGrid
+                ? "Reference-grid terrain experiment"
+                : "Local terrain experiment"}
           </p>
           <h1>
             {mode === "imagery"
               ? "Bring a cloud raster into 3D."
-              : "Build the ground from elevation COGs."}
+              : usesElevationSuisseGrid
+                ? "Use the Swiss cache grid with COG heights."
+                : "Build the ground from elevation COGs."}
           </h1>
           <p className="intro-copy">
             {mode === "imagery"
               ? "Paste a public Cloud Optimized GeoTIFF (COG) URL. The scene reads only the tiles it needs and drapes them over world elevation."
-              : `Explore ${terrainRegion.cogs.length} aligned SwissALTI3D COGs around ${terrainRegion.label} as one local LV95 ground surface—without reprojection or world elevation.`}
+              : usesElevationSuisseGrid
+                ? `Follow the national elevation_suisse tile grid while every height still comes from ${terrainRegion.cogs.length} ${terrainRegion.label} SwissALTI3D COGs.`
+                : `Explore ${terrainRegion.cogs.length} aligned SwissALTI3D COGs around ${terrainRegion.label} as one local LV95 ground surface—without reprojection or world elevation.`}
           </p>
         </section>
 
@@ -1414,17 +1476,20 @@ export default function Home() {
             <section className="experiment-card" aria-label="Experimental terrain configuration">
               <div className="experiment-card__title">
                 <span className="experiment-badge">Experimental</span>
-                <strong>SwissALTI3D · {terrainRegion.label} COG mosaic</strong>
+                <strong>
+                  SwissALTI3D · {terrainRegion.label} · {terrainTilingLabel}
+                </strong>
               </div>
               <p>
-                One custom elevation layer routes every terrain request to the
-                intersecting kilometre COGs, stitches their pixels directly,
-                and preserves intentional no-data areas.
+                {usesElevationSuisseGrid
+                  ? `The scene follows elevation_suisse levels 0–18. Its custom ground reads only intersecting COG pixels and caches COG-derived overview tiles below LOD ${ELEVATION_SUISSE_DETAIL_LOD}.`
+                  : "One custom elevation layer routes every terrain request to the intersecting kilometre COGs, stitches their pixels directly, and preserves intentional no-data areas."}
               </p>
               <div className="terrain-facts">
                 <div><span>View</span><strong>Local</strong></div>
                 <div><span>Horizontal</span><strong>EPSG:{SWISS_ALTI_HORIZONTAL_WKID}</strong></div>
                 <div><span>Vertical</span><strong>EPSG:{SWISS_ALTI_VERTICAL_WKID}</strong></div>
+                <div><span>Tiling</span><strong>{terrainTilingLabel}</strong></div>
                 <div><span>Resolution</span><strong>{SWISS_ALTI_CELL_SIZE_METERS} m</strong></div>
                 <div><span>Years</span><strong>{terrainYears}</strong></div>
                 <div><span>Source</span><strong>{terrainRegion.cogs.length} COGs</strong></div>
@@ -1508,6 +1573,7 @@ export default function Home() {
               </div>
               <dl>
                 <div><dt>COG source</dt><dd>{terrainValidation.source}</dd></div>
+                <div><dt>Tiling scheme</dt><dd>{terrainValidation.tiling}</dd></div>
                 <div><dt>Source pixels</dt><dd>{terrainValidation.sourcePixels}</dd></div>
                 <div><dt>Ground layers</dt><dd>{terrainValidation.groundLayers}</dd></div>
                 <div><dt>Native coverage</dt><dd>{terrainValidation.coverage}</dd></div>
@@ -1519,9 +1585,9 @@ export default function Home() {
             <section className="terrain-note">
               <strong>Purposefully isolated</strong>
               <p>
-                This mode has no satellite basemap, basemap gallery, world
-                elevation, or arbitrary elevation URL. Sources are loaded on
-                demand and cached while intentional no-data remains untouched.
+                {usesElevationSuisseGrid
+                  ? "The reference ImageServer supplies grid metadata only. It is never added to Ground and no elevation tiles are requested from it."
+                  : "This mode has no satellite basemap, basemap gallery, world elevation, or arbitrary elevation URL. Sources are loaded on demand and cached while intentional no-data remains untouched."}
               </p>
             </section>
           </>
@@ -1531,7 +1597,9 @@ export default function Home() {
           <span className="beta-dot" aria-hidden="true" />
           {mode === "imagery"
             ? "Direct COG display is a beta capability in the ArcGIS Maps SDK."
-            : `Experimental local terrain uses ${terrainRegion.cogs.length} ${terrainRegion.label} SwissALTI3D COGs as one virtual mosaic.`}
+            : usesElevationSuisseGrid
+              ? `Experimental Swiss cache grid uses ${terrainRegion.cogs.length} ${terrainRegion.label} COGs for every elevation value.`
+              : `Experimental local terrain uses ${terrainRegion.cogs.length} ${terrainRegion.label} SwissALTI3D COGs as one virtual mosaic.`}
         </footer>
       </aside>
     </main>

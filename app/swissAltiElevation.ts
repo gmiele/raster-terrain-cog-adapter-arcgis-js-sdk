@@ -138,7 +138,11 @@ export type SwissAltiElevationLayer = ArcGISObject & {
   ) => [number, number, number, number];
   load?: () => Promise<ArcGISObject>;
   spatialReference?: { wkid?: number; latestWkid?: number };
-  tileInfo?: { size?: number[] };
+  tileInfo?: {
+    lods?: Array<{ level: number; resolution: number; scale: number }>;
+    origin?: { x?: number; y?: number };
+    size?: number[];
+  };
 };
 
 type CustomLayerThis = SwissAltiElevationLayer & {
@@ -154,7 +158,10 @@ type CreateSwissAltiElevationLayerOptions = {
   preparedCatalog: PreparedSwissAltiCatalog;
   spatialReference: ArcGISObject;
   tileInfo: ArcGISObject;
+  tilingProfile?: SwissAltiTilingProfile;
 };
+
+export type SwissAltiTilingProfile = "regional" | "elevation-suisse";
 
 type MosaicWindow = {
   columnStart: number;
@@ -169,6 +176,7 @@ const ELEVATION_TILE_SIZE = 256;
 const MAX_SOURCE_CACHE_SIZE = 32;
 const SOURCE_FETCH_CONCURRENCY = 6;
 const MAX_COARSE_FACTOR = 32;
+const MAX_OUTPUT_TILE_CACHE_SIZE = 24;
 const COORDINATE_TOLERANCE = 1e-6;
 
 function abortError(signal?: AbortSignal) {
@@ -556,10 +564,25 @@ export function createSwissAltiElevationLayer({
   preparedCatalog,
   spatialReference,
   tileInfo,
+  tilingProfile = "regional",
 }: CreateSwissAltiElevationLayerOptions): SwissAltiElevationLayer {
   const { metadata, region } = preparedCatalog;
-  const nativeLevel = lods.length - 1;
-  const nativeTileSpan = ELEVATION_TILE_SIZE * metadata.nativeResolution;
+  const tileInfoDefinition = tileInfo as {
+    lods?: Array<{ level: number; resolution: number; scale: number }>;
+    origin?: { x?: number; y?: number };
+    size?: number[];
+  };
+  const nativeLod = lods.at(-1);
+  if (!nativeLod) throw new Error("The elevation tiling profile has no LODs.");
+  const nominalTileSize =
+    tileInfoDefinition.size?.[0] ?? ELEVATION_TILE_SIZE;
+  const tileOrigin = {
+    x: tileInfoDefinition.origin?.x ?? metadata.extent.xmin,
+    y: tileInfoDefinition.origin?.y ?? metadata.extent.ymax,
+  };
+  const nativeLevel = nativeLod.level;
+  const nativeTileSpan = nominalTileSize * nativeLod.resolution;
+  const outputTileCache = new Map<string, Promise<ElevationTileData>>();
 
   const SwissAltiElevationLayerClass = BaseElevationLayer.createSubclass({
     declaredClass: "raster-terrain-lab.RegionalCogElevationLayer",
@@ -580,7 +603,8 @@ export function createSwissAltiElevationLayer({
         throw new Error("Elevation tile bounds are unavailable.");
       }
 
-      const bounds = this.getTileBounds(level, row, column);
+      const buildTile = async () => {
+        const bounds = this.getTileBounds!(level, row, column);
       const requestExtent: ExtentLike = {
         xmin: bounds[0],
         ymin: bounds[1],
@@ -651,23 +675,54 @@ export function createSwissAltiElevationLayer({
         height: size,
         noDataValue: ELEVATION_NO_DATA_VALUE,
       };
+      };
+
+      if (tilingProfile === "regional") return buildTile();
+
+      const cacheKey = [level, row, column].join("/");
+      const cached = outputTileCache.get(cacheKey);
+      if (cached) {
+        outputTileCache.delete(cacheKey);
+        outputTileCache.set(cacheKey, cached);
+        return cached;
+      }
+
+      const tilePromise = buildTile();
+      outputTileCache.set(cacheKey, tilePromise);
+      void tilePromise.catch(() => {
+        if (outputTileCache.get(cacheKey) === tilePromise) {
+          outputTileCache.delete(cacheKey);
+        }
+      });
+      while (outputTileCache.size > MAX_OUTPUT_TILE_CACHE_SIZE) {
+        const oldestKey = outputTileCache.keys().next().value as
+          | string
+          | undefined;
+        if (!oldestKey) break;
+        outputTileCache.delete(oldestKey);
+      }
+      return tilePromise;
     },
 
     disposeSource() {
+      outputTileCache.clear();
       preparedCatalog.dispose();
     },
   });
 
   const layerInstance = new SwissAltiElevationLayerClass({
-    title: `${region.label} · ${metadata.sourceCount} SwissALTI3D COGs`,
+    title:
+      tilingProfile === "elevation-suisse"
+        ? `${region.label} · Swiss cache grid · COG elevation`
+        : `${region.label} · ${metadata.sourceCount} SwissALTI3D COGs`,
     spatialReference,
     tileInfo,
     fullExtent,
   }) as SwissAltiElevationLayer;
 
   const tileAtCoordinate = (x: number, y: number) => ({
-    column: Math.floor((x - metadata.extent.xmin) / nativeTileSpan),
-    row: Math.floor((metadata.extent.ymax - y) / nativeTileSpan),
+    column: Math.floor((x - tileOrigin.x) / nativeTileSpan),
+    row: Math.floor((tileOrigin.y - y) / nativeTileSpan),
   });
 
   layerInstance.auditRegionalCoverage = async (
@@ -697,7 +752,10 @@ export function createSwissAltiElevationLayer({
         xmax: bounds[2],
         ymax: bounds[3],
       }).length;
-      if (sourceCount !== probe.expectSources) {
+      if (
+        tilingProfile === "regional" &&
+        sourceCount !== probe.expectSources
+      ) {
         throw new Error(
           `The ${probe.id} probe resolved ${sourceCount} COGs instead of ${probe.expectSources}.`,
         );

@@ -244,25 +244,22 @@ export function resolveSwissAltiCogs(
   region: SwissAltiRegionCatalog,
   extent: ExtentLike,
 ) {
-  const epsilon = 1e-7;
-  const minEastKm = Math.floor(extent.xmin / SWISS_ALTI_COG_SIZE_METERS);
-  const maxEastKm = Math.floor(
-    (extent.xmax - epsilon) / SWISS_ALTI_COG_SIZE_METERS,
-  );
-  const minNorthKm = Math.floor(extent.ymin / SWISS_ALTI_COG_SIZE_METERS);
-  const maxNorthKm = Math.floor(
-    (extent.ymax - epsilon) / SWISS_ALTI_COG_SIZE_METERS,
-  );
-  const matches: SwissAltiCog[] = [];
-
-  for (let northKm = minNorthKm; northKm <= maxNorthKm; northKm += 1) {
-    for (let eastKm = minEastKm; eastKm <= maxEastKm; eastKm += 1) {
-      const cog = region.cogById.get(`${eastKm}-${northKm}`);
-      if (cog) matches.push(cog);
-    }
+  if (
+    extent.xmax <= region.extent.xmin ||
+    extent.xmin >= region.extent.xmax ||
+    extent.ymax <= region.extent.ymin ||
+    extent.ymin >= region.extent.ymax
+  ) {
+    return [];
   }
 
-  return matches;
+  return region.cogs.filter(
+    (cog) =>
+      cog.extent.xmax > extent.xmin &&
+      cog.extent.xmin < extent.xmax &&
+      cog.extent.ymax > extent.ymin &&
+      cog.extent.ymin < extent.ymax,
+  );
 }
 
 // The original Zermatt exports remain available for the imagery example.

@@ -61,7 +61,8 @@ test("preserves source years and creates region-scoped lookup state", async () =
   assert.match(source, /cacheKey: `\$\{year\}:\$\{id\}`/);
   assert.match(source, /Duplicate SwissALTI tile coordinate/);
   assert.match(source, /resolveSwissAltiCogs\(\s*region: SwissAltiRegionCatalog/);
-  assert.match(source, /region\.cogById\.get/);
+  assert.match(source, /region\.cogs\.filter/);
+  assert.doesNotMatch(source, /for \(let northKm = minNorthKm/);
   assert.doesNotMatch(source, /swissalti3d_2024_\$\{id\}/);
 });
 
@@ -76,8 +77,8 @@ test("switches one cached virtual elevation mosaic between regional catalogs", a
   assert.match(page, /setTerrainRegionId/);
   assert.match(page, /prepareSwissAltiCatalog\(\s*ImageryTileLayer,\s*terrainRegion,/);
   assert.match(page, /terrainRegion\.initialExtent/);
-  assert.match(page, /key: `terrain-scene-\$\{terrainRegion\.id\}`/);
-  assert.match(page, /\[frameTerrain, loadCog, mode, sdkReady, terrainRegion\]/);
+  assert.match(page, /key: `terrain-scene-\$\{mode\}-\$\{terrainRegion\.id\}`/);
+  assert.match(page, /terrainTilingProfile/);
   assert.match(page, /layers: \[terrainLayer\]/);
   assert.match(page, /terrainLayer\.auditRegionalCoverage/);
   assert.match(page, /terrainRegion\.id === "zermatt"/);
