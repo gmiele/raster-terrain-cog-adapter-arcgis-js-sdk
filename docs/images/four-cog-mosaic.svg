@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Composing one terrain tile from four COG windows</title>
+  <desc id="desc">Four intersecting source windows are read independently and copied into one no-data initialized terrain array.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#243d2f"/>
+    </marker>
+    <pattern id="nodata" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="12" stroke="#bd3b2f" stroke-width="3" opacity="0.45"/>
+    </pattern>
+    <style>
+      .heading { font: 700 30px system-ui, sans-serif; fill: #131713; }
+      .subhead { font: 700 18px system-ui, sans-serif; fill: #243d2f; }
+      .body { font: 15px system-ui, sans-serif; fill: #4f5952; }
+      .small { font: 13px system-ui, sans-serif; fill: #5e6861; }
+      .code { font: 13px ui-monospace, monospace; fill: #243d2f; }
+      .source { stroke: #66746a; stroke-width: 2; }
+      .arrow { fill: none; stroke: #243d2f; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="700" rx="24" fill="#f4f2ec"/>
+  <text x="60" y="62" class="heading">How four source windows become one terrain tile</text>
+  <text x="60" y="96" class="body">Each COG contributes only the pixels inside the requested extent.</text>
+
+  <g transform="translate(70 150)">
+    <text x="180" y="0" text-anchor="middle" class="subhead">Intersecting COG sources</text>
+
+    <rect x="0" y="30" width="170" height="170" rx="10" fill="#cfe0d2" class="source"/>
+    <rect x="190" y="30" width="170" height="170" rx="10" fill="#d5e4ec" class="source"/>
+    <rect x="0" y="220" width="170" height="170" rx="10" fill="#eadcbe" class="source"/>
+    <rect x="190" y="220" width="170" height="170" rx="10" fill="#ded5e8" class="source"/>
+
+    <text x="16" y="58" class="code">COG A</text>
+    <text x="206" y="58" class="code">COG B</text>
+    <text x="16" y="248" class="code">COG C</text>
+    <text x="300" y="248" class="code">COG D</text>
+
+    <rect x="96" y="104" width="74" height="96" fill="#6e9f7c" fill-opacity="0.64" stroke="#243d2f" stroke-width="3"/>
+    <rect x="190" y="104" width="98" height="96" fill="#6ca6c1" fill-opacity="0.64" stroke="#243d2f" stroke-width="3"/>
+    <rect x="96" y="220" width="74" height="76" fill="#e2a960" fill-opacity="0.72" stroke="#243d2f" stroke-width="3"/>
+    <rect x="190" y="220" width="98" height="76" fill="#9c82b8" fill-opacity="0.55" stroke="#243d2f" stroke-width="3"/>
+
+    <path d="M228 244 q24 12 10 36 q-24 12 -42 -2 q-8 -24 12 -34 Z" fill="url(#nodata)" stroke="#bd3b2f" stroke-width="2"/>
+    <text x="292" y="278" class="small">masked pixels</text>
+
+    <text x="180" y="428" text-anchor="middle" class="body">mosaicWindow() calculates these four read windows.</text>
+  </g>
+
+  <path class="arrow" d="M475 350 H625"/>
+  <text x="550" y="322" text-anchor="middle" class="code">fetchPixels()</text>
+  <text x="550" y="382" text-anchor="middle" class="small">read + copy valid values</text>
+
+  <g transform="translate(690 150)">
+    <text x="205" y="0" text-anchor="middle" class="subhead">One 257 × 257 output array</text>
+    <rect x="0" y="30" width="410" height="410" fill="url(#nodata)" stroke="#243d2f" stroke-width="3"/>
+
+    <rect x="0" y="30" width="180" height="230" fill="#6e9f7c" fill-opacity="0.64"/>
+    <rect x="180" y="30" width="230" height="230" fill="#6ca6c1" fill-opacity="0.64"/>
+    <rect x="0" y="260" width="180" height="180" fill="#e2a960" fill-opacity="0.72"/>
+    <rect x="180" y="260" width="230" height="180" fill="#9c82b8" fill-opacity="0.55"/>
+    <path d="M260 315 q44 20 22 63 q-40 28 -80 -6 q-18 -41 22 -61 Z" fill="url(#nodata)" stroke="#bd3b2f" stroke-width="2"/>
+
+    <path d="M180 30 V440 M0 260 H410" stroke="#243d2f" stroke-width="2" stroke-dasharray="8 8"/>
+    <text x="16" y="58" class="code">A values</text>
+    <text x="196" y="58" class="code">B values</text>
+    <text x="16" y="290" class="code">C values</text>
+    <text x="196" y="290" class="code">D values</text>
+    <text x="295" y="370" text-anchor="middle" class="small">masked → no-data</text>
+  </g>
+
+  <g transform="translate(70 620)">
+    <circle cx="10" cy="10" r="10" fill="#d8ff4f" stroke="#243d2f"/>
+    <text x="34" y="16" class="body">The array starts completely as no-data. Only validated, finite elevation samples overwrite it.</text>
+  </g>
+</svg>

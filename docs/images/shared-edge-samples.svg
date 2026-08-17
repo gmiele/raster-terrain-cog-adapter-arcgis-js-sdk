@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">Shared edge samples between elevation tiles</title>
+  <desc id="desc">Two adjacent 256-cell terrain tiles each return 257 sample columns, sharing the elevations along their common edge.</desc>
+  <defs>
+    <pattern id="gridA" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M30 0 H0 V30" fill="none" stroke="#c7d8ca" stroke-width="1"/>
+    </pattern>
+    <pattern id="gridB" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M30 0 H0 V30" fill="none" stroke="#ccdce4" stroke-width="1"/>
+    </pattern>
+    <style>
+      .heading { font: 700 30px system-ui, sans-serif; fill: #131713; }
+      .subhead { font: 700 18px system-ui, sans-serif; fill: #243d2f; }
+      .body { font: 15px system-ui, sans-serif; fill: #4f5952; }
+      .small { font: 13px system-ui, sans-serif; fill: #5e6861; }
+      .code { font: 13px ui-monospace, monospace; fill: #243d2f; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="540" rx="24" fill="#f4f2ec"/>
+  <text x="60" y="62" class="heading">Why a 256-cell tile returns 257 samples</text>
+  <text x="60" y="96" class="body">A mesh needs elevations at both ends of every cell row and column.</text>
+
+  <g transform="translate(120 155)">
+    <text x="240" y="-24" text-anchor="middle" class="subhead">Terrain tile A</text>
+    <rect x="0" y="0" width="480" height="270" fill="#e8f0e8" stroke="#243d2f" stroke-width="3"/>
+    <rect x="0" y="0" width="480" height="270" fill="url(#gridA)"/>
+    <text x="16" y="28" class="code">256 × 256 cells</text>
+
+    <text x="0" y="304" class="code">sample 0</text>
+    <text x="460" y="304" text-anchor="end" class="code">sample 256</text>
+    <circle cx="0" cy="270" r="6" fill="#243d2f"/>
+    <circle cx="480" cy="270" r="7" fill="#bd6d23"/>
+  </g>
+
+  <g transform="translate(600 155)">
+    <text x="240" y="-24" text-anchor="middle" class="subhead">Terrain tile B</text>
+    <rect x="0" y="0" width="480" height="270" fill="#e7eff3" stroke="#243d2f" stroke-width="3"/>
+    <rect x="0" y="0" width="480" height="270" fill="url(#gridB)"/>
+    <text x="16" y="28" class="code">256 × 256 cells</text>
+
+    <text x="20" y="304" class="code">sample 0</text>
+    <text x="390" y="304" class="code">sample 256</text>
+    <circle cx="0" cy="270" r="7" fill="#bd6d23"/>
+    <circle cx="480" cy="270" r="6" fill="#243d2f"/>
+  </g>
+
+  <line x1="600" y1="130" x2="600" y2="456" stroke="#bd6d23" stroke-width="6"/>
+  <rect x="487" y="116" width="226" height="42" rx="21" fill="#fffef9" stroke="#bd6d23" stroke-width="2"/>
+  <text x="600" y="143" text-anchor="middle" class="subhead">same edge elevations</text>
+
+  <g transform="translate(300 480)">
+    <rect width="600" height="38" rx="10" fill="#e6eadf"/>
+    <text x="300" y="25" text-anchor="middle" class="body">257 sample positions define 256 intervals · neighboring tiles reuse the boundary.</text>
+  </g>
+</svg>

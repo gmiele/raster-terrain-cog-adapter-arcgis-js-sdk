@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">End-to-end terrain request flow</title>
+  <desc id="desc">Six stages show how an ArcGIS terrain tile request becomes COG pixel reads and then a 3D ground mesh.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#243d2f"/>
+    </marker>
+    <style>
+      .heading { font: 700 30px system-ui, sans-serif; fill: #131713; }
+      .eyebrow { font: 700 13px ui-monospace, monospace; letter-spacing: 1.5px; fill: #516057; }
+      .label { font: 700 19px system-ui, sans-serif; fill: #131713; }
+      .body { font: 15px system-ui, sans-serif; fill: #4f5952; }
+      .code { font: 14px ui-monospace, monospace; fill: #243d2f; }
+      .number { font: 700 15px system-ui, sans-serif; fill: #243d2f; text-anchor: middle; dominant-baseline: middle; }
+      .box { fill: #fffef9; stroke: #cbd3cb; stroke-width: 2; }
+      .arrow { fill: none; stroke: #243d2f; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="600" rx="24" fill="#f4f2ec"/>
+  <text x="60" y="58" class="eyebrow">BROWSER-SIDE ELEVATION PIPELINE</text>
+  <text x="60" y="98" class="heading">From a terrain request to a 3D mesh</text>
+
+  <path class="arrow" d="M360 218 H430"/>
+  <path class="arrow" d="M750 218 H820"/>
+  <path class="arrow" d="M1000 282 V345"/>
+  <path class="arrow" d="M820 437 H750"/>
+  <path class="arrow" d="M430 437 H360"/>
+
+  <g transform="translate(60 155)">
+    <rect class="box" width="300" height="126" rx="16"/>
+    <circle cx="28" cy="28" r="17" fill="#d8ff4f"/>
+    <text x="28" y="28" class="number">1</text>
+    <text x="56" y="34" class="label">ArcGIS requests terrain</text>
+    <text x="24" y="72" class="code">fetchTile(level, row, column)</text>
+    <text x="24" y="101" class="body">The scene asks for one LOD tile.</text>
+  </g>
+
+  <g transform="translate(450 155)">
+    <rect class="box" width="300" height="126" rx="16"/>
+    <circle cx="28" cy="28" r="17" fill="#d8ff4f"/>
+    <text x="28" y="28" class="number">2</text>
+    <text x="56" y="34" class="label">Find its map extent</text>
+    <text x="24" y="72" class="code">getTileBounds(...)</text>
+    <text x="24" y="101" class="body">Bounds stay in EPSG:2056.</text>
+  </g>
+
+  <g transform="translate(840 155)">
+    <rect class="box" width="300" height="126" rx="16"/>
+    <circle cx="28" cy="28" r="17" fill="#d8ff4f"/>
+    <text x="28" y="28" class="number">3</text>
+    <text x="56" y="34" class="label">Resolve source COGs</text>
+    <text x="24" y="72" class="code">resolveSwissAltiCogs(...)</text>
+    <text x="24" y="101" class="body">Only intersecting 1 km files qualify.</text>
+  </g>
+
+  <g transform="translate(840 374)">
+    <rect class="box" width="300" height="126" rx="16"/>
+    <circle cx="28" cy="28" r="17" fill="#d8ff4f"/>
+    <text x="28" y="28" class="number">4</text>
+    <text x="56" y="34" class="label">Read pixel windows</text>
+    <text x="24" y="72" class="code">ImageryTileLayer.fetchPixels()</text>
+    <text x="24" y="101" class="body">Reads run on demand, up to six at once.</text>
+  </g>
+
+  <g transform="translate(450 374)">
+    <rect class="box" width="300" height="126" rx="16"/>
+    <circle cx="28" cy="28" r="17" fill="#d8ff4f"/>
+    <text x="28" y="28" class="number">5</text>
+    <text x="56" y="34" class="label">Compose elevation values</text>
+    <text x="24" y="72" class="code">Float32Array(257 × 257)</text>
+    <text x="24" y="101" class="body">Masks and no-data holes are preserved.</text>
+  </g>
+
+  <g transform="translate(60 374)">
+    <rect class="box" width="300" height="126" rx="16"/>
+    <circle cx="28" cy="28" r="17" fill="#d8ff4f"/>
+    <text x="28" y="28" class="number">6</text>
+    <text x="56" y="34" class="label">Build the ground mesh</text>
+    <text x="24" y="72" class="code">Ground({ layers: [custom] })</text>
+    <text x="24" y="101" class="body">The custom layer is the only elevation source.</text>
+  </g>
+
+  <rect x="60" y="536" width="1080" height="2" fill="#cbd3cb"/>
+  <text x="60" y="568" class="body">The adapter translates between two different grids; it does not create a new combined GeoTIFF.</text>
+</svg>

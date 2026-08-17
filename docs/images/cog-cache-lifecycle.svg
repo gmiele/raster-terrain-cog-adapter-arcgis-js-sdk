@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">On-demand COG reader cache lifecycle</title>
+  <desc id="desc">A requested COG is reused on a cache hit or opened and validated on a miss, protected while active, and later retained or evicted by least-recently-used order.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#243d2f"/>
+    </marker>
+    <marker id="abortArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#bd3b2f"/>
+    </marker>
+    <style>
+      .heading { font: 700 30px system-ui, sans-serif; fill: #131713; }
+      .label { font: 700 17px system-ui, sans-serif; fill: #131713; }
+      .body { font: 14px system-ui, sans-serif; fill: #4f5952; }
+      .small { font: 13px system-ui, sans-serif; fill: #5e6861; }
+      .code { font: 13px ui-monospace, monospace; fill: #243d2f; }
+      .box { fill: #fffef9; stroke: #aeb9b0; stroke-width: 2; }
+      .decision { fill: #e6eadf; stroke: #243d2f; stroke-width: 2; }
+      .arrow { fill: none; stroke: #243d2f; stroke-width: 3; marker-end: url(#arrow); }
+      .abort { fill: none; stroke: #bd3b2f; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#abortArrow); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="660" rx="24" fill="#f4f2ec"/>
+  <text x="60" y="62" class="heading">COGs open only when the visible terrain needs them</text>
+
+  <g transform="translate(60 130)">
+    <rect class="box" width="190" height="82" rx="14"/>
+    <text x="95" y="34" text-anchor="middle" class="label">COG is requested</text>
+    <text x="95" y="59" text-anchor="middle" class="code">withSource(cog)</text>
+  </g>
+
+  <path class="arrow" d="M250 171 H338"/>
+
+  <g transform="translate(340 116)">
+    <path class="decision" d="M110 0 L220 55 L110 110 L0 55 Z"/>
+    <text x="110" y="48" text-anchor="middle" class="label">Cache entry?</text>
+    <text x="110" y="70" text-anchor="middle" class="code">cache.get(key)</text>
+  </g>
+
+  <path class="arrow" d="M560 171 H672"/>
+  <text x="615" y="154" text-anchor="middle" class="small">hit</text>
+
+  <g transform="translate(675 130)">
+    <rect class="box" width="220" height="82" rx="14"/>
+    <text x="110" y="34" text-anchor="middle" class="label">Reuse loaded reader</text>
+    <text x="110" y="59" text-anchor="middle" class="body">No metadata reload</text>
+  </g>
+
+  <path class="arrow" d="M450 226 V286"/>
+  <text x="470" y="260" class="small">miss</text>
+
+  <g transform="translate(340 290)">
+    <rect class="box" width="220" height="98" rx="14"/>
+    <text x="110" y="31" text-anchor="middle" class="label">Create hidden reader</text>
+    <text x="110" y="56" text-anchor="middle" class="code">new ImageryTileLayer()</text>
+    <text x="110" y="80" text-anchor="middle" class="body">load + validate metadata</text>
+  </g>
+
+  <path class="arrow" d="M560 339 H672 V212"/>
+  <text x="630" y="324" text-anchor="end" class="small">cache</text>
+
+  <path class="arrow" d="M895 171 H976 V295 H875"/>
+
+  <g transform="translate(650 280)">
+    <rect class="box" width="225" height="98" rx="14"/>
+    <text x="112" y="31" text-anchor="middle" class="label">Protect while in use</text>
+    <text x="112" y="58" text-anchor="middle" class="code">active += 1</text>
+    <text x="112" y="81" text-anchor="middle" class="body">update last-used order</text>
+  </g>
+
+  <path class="arrow" d="M762 378 V425"/>
+
+  <g transform="translate(650 430)">
+    <rect class="box" width="225" height="92" rx="14"/>
+    <text x="112" y="34" text-anchor="middle" class="label">Read pixel window</text>
+    <text x="112" y="61" text-anchor="middle" class="code">fetchPixels(...)</text>
+  </g>
+
+  <path class="arrow" d="M875 476 H942"/>
+
+  <g transform="translate(945 430)">
+    <rect class="box" width="195" height="92" rx="14"/>
+    <text x="97" y="34" text-anchor="middle" class="label">Release reader</text>
+    <text x="97" y="61" text-anchor="middle" class="code">active -= 1</text>
+  </g>
+
+  <path class="arrow" d="M1042 522 V553 H940"/>
+
+  <g transform="translate(690 540)">
+    <path class="decision" d="M125 0 L250 48 L125 96 L0 48 Z"/>
+    <text x="125" y="42" text-anchor="middle" class="label">More than 32?</text>
+    <text x="125" y="64" text-anchor="middle" class="body">inactive cache entries</text>
+  </g>
+
+  <path class="arrow" d="M690 588 H562"/>
+  <text x="625" y="574" text-anchor="middle" class="small">yes</text>
+  <g transform="translate(330 545)">
+    <rect class="box" width="230" height="86" rx="14"/>
+    <text x="115" y="34" text-anchor="middle" class="label">Evict oldest inactive</text>
+    <text x="115" y="61" text-anchor="middle" class="code">layer.destroy()</text>
+  </g>
+
+  <path class="arrow" d="M815 636 H1050"/>
+  <text x="930" y="621" text-anchor="middle" class="small">no · keep for reuse</text>
+
+  <path class="abort" d="M60 330 H285 V478 H615"/>
+  <text x="72" y="312" class="label" style="fill:#bd3b2f">Abort signal</text>
+  <text x="72" y="353" class="small">Mode or region changed</text>
+  <text x="72" y="374" class="small">→ stop obsolete work</text>
+</svg>
