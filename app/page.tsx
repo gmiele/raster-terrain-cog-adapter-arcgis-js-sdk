@@ -35,6 +35,8 @@ import {
 
 const DEMO_COG_URL =
   "https://ss6imagery.arcgisonline.com/imagery_sample/landsat8/Bolivia_LC08_L1TP_001069_20190719_MS.tiff";
+const SWISS_BUILDINGS_SCENE_URL =
+  "https://tiles.arcgis.com/tiles/oPre3pOfRfefL8y0/arcgis/rest/services/swissbuildings3D_LOD2_lv95/SceneServer";
 
 type AppMode = "imagery" | "terrain" | "terrain-suisse-grid";
 type LoadState = "starting" | "loading" | "ready" | "error";
@@ -350,6 +352,7 @@ export default function Home() {
   const imageryLayerRef = useRef<ArcGISObject | null>(null);
   const terrainLayerRef = useRef<SwissAltiElevationLayer | null>(null);
   const terrainOverlayLayerRef = useRef<ArcGISObject | null>(null);
+  const buildingsLayerRef = useRef<ArcGISObject | null>(null);
   const terrainExtentRef = useRef<ArcGISObject | null>(null);
   const layerConstructorRef = useRef<ArcGISConstructor | null>(null);
   const sceneGenerationRef = useRef(0);
@@ -359,6 +362,8 @@ export default function Home() {
   const opacityRef = useRef(88);
   const terrainOverlayOpacityRef = useRef(82);
   const terrainOverlayVisibleRef = useRef(true);
+  const buildingsOpacityRef = useRef(90);
+  const buildingsVisibleRef = useRef(true);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [mode, setMode] = useState<AppMode>("imagery");
@@ -377,6 +382,13 @@ export default function Home() {
   );
   const [terrainOverlayOpacity, setTerrainOverlayOpacity] = useState(82);
   const [terrainOverlayVisible, setTerrainOverlayVisible] = useState(true);
+  const [buildingsState, setBuildingsState] =
+    useState<TerrainOverlayState>("idle");
+  const [buildingsStatus, setBuildingsStatus] = useState(
+    "Waiting for the local terrain scene…",
+  );
+  const [buildingsOpacity, setBuildingsOpacity] = useState(90);
+  const [buildingsVisible, setBuildingsVisible] = useState(true);
   const [terrainStatus, setTerrainStatus] = useState(
     "Preparing local EPSG:2056 scene…",
   );
@@ -706,6 +718,8 @@ export default function Home() {
 
     const initializeTerrain = async (sceneElement: ArcGISSceneElement) => {
       setTerrainState("loading");
+      setBuildingsState("loading");
+      setBuildingsStatus("Loading the nationwide EPSG:2056 buildings layer…");
       setTerrainOverlayState(
         terrainRegion.id === "zermatt" ? "loading" : "idle",
       );
@@ -734,6 +748,7 @@ export default function Home() {
         ImageryTileLayer,
         Point,
         RasterShadedReliefRenderer,
+        SceneLayer,
         SpatialReference,
         TileInfo,
         rasterColorRamps,
@@ -744,6 +759,7 @@ export default function Home() {
         "@arcgis/core/layers/ImageryTileLayer.js",
         "@arcgis/core/geometry/Point.js",
         "@arcgis/core/renderers/RasterShadedReliefRenderer.js",
+        "@arcgis/core/layers/SceneLayer.js",
         "@arcgis/core/geometry/SpatialReference.js",
         "@arcgis/core/layers/support/TileInfo.js",
         "@arcgis/core/smartMapping/raster/support/colorRamps.js",
@@ -751,6 +767,7 @@ export default function Home() {
         ArcGISConstructor & {
           createSubclass: (definition: Record<string, unknown>) => ArcGISConstructor;
         },
+        ArcGISConstructor,
         ArcGISConstructor,
         ArcGISConstructor,
         ArcGISConstructor,
@@ -858,6 +875,49 @@ export default function Home() {
       }));
       if (groundLayerCount !== 1) {
         throw new Error(`Expected one ground layer; found ${groundLayerCount}.`);
+      }
+
+      const terrainMap = sceneElement.map as ArcGISObject & {
+        add?: (layer: ArcGISObject) => void;
+        remove?: (layer: ArcGISObject) => void;
+      };
+      const buildingsLayer = new SceneLayer({
+        url: SWISS_BUILDINGS_SCENE_URL,
+        title: "swissBUILDINGS3D · nationwide LOD2",
+        opacity: buildingsOpacityRef.current / 100,
+        popupEnabled: true,
+        visible: buildingsVisibleRef.current,
+      }) as ArcGISObject & {
+        load?: (options?: { signal?: AbortSignal }) => Promise<ArcGISObject>;
+      };
+
+      terrainMap.add?.(buildingsLayer);
+      buildingsLayerRef.current = buildingsLayer;
+      try {
+        await buildingsLayer.load?.({ signal: abortController.signal });
+        if (!isCurrent()) {
+          terrainMap.remove?.(buildingsLayer);
+          buildingsLayer.destroy?.();
+          if (buildingsLayerRef.current === buildingsLayer) {
+            buildingsLayerRef.current = null;
+          }
+          return;
+        }
+        setBuildingsState("ready");
+        setBuildingsStatus(
+          "Nationwide swissBUILDINGS3D LOD2 · EPSG:2056 scene layer.",
+        );
+      } catch (error) {
+        terrainMap.remove?.(buildingsLayer);
+        buildingsLayer.destroy?.();
+        if (buildingsLayerRef.current === buildingsLayer) {
+          buildingsLayerRef.current = null;
+        }
+        if (abortController.signal.aborted || !isCurrent()) return;
+        setBuildingsState("error");
+        setBuildingsStatus(
+          `Buildings unavailable: ${getErrorMessage(error)}`,
+        );
       }
 
       if (terrainRegion.id === "zermatt") {
@@ -1021,6 +1081,12 @@ export default function Home() {
       }
       terrainOverlayLayerRef.current?.destroy?.();
       terrainOverlayLayerRef.current = null;
+
+      if (buildingsLayerRef.current) {
+        map?.remove?.(buildingsLayerRef.current);
+      }
+      buildingsLayerRef.current?.destroy?.();
+      buildingsLayerRef.current = null;
 
       terrainLayerRef.current?.disposeSource?.();
       terrainLayerRef.current?.destroy?.();
@@ -1323,6 +1389,20 @@ export default function Home() {
       terrainOverlayLayerRef.current.visible = terrainOverlayVisible;
     }
   }, [terrainOverlayVisible]);
+
+  useEffect(() => {
+    buildingsOpacityRef.current = buildingsOpacity;
+    if (buildingsLayerRef.current) {
+      buildingsLayerRef.current.opacity = buildingsOpacity / 100;
+    }
+  }, [buildingsOpacity]);
+
+  useEffect(() => {
+    buildingsVisibleRef.current = buildingsVisible;
+    if (buildingsLayerRef.current) {
+      buildingsLayerRef.current.visible = buildingsVisible;
+    }
+  }, [buildingsVisible]);
 
   const submitUrl = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1962,6 +2042,52 @@ export default function Home() {
                 </button>
               </section>
             ) : null}
+
+            <section
+              className="terrain-overlay-card"
+              aria-label="Swiss buildings 3D scene layer"
+            >
+              <div className="section-heading">
+                <span>Scene layer · swissBUILDINGS3D</span>
+                <button
+                  className={`visibility-toggle ${buildingsVisible ? "is-on" : ""}`}
+                  type="button"
+                  onClick={() =>
+                    setBuildingsVisible((current) => !current)
+                  }
+                  disabled={buildingsState !== "ready"}
+                  aria-pressed={buildingsVisible}
+                >
+                  <span className="visibility-toggle__track"><span /></span>
+                  {buildingsVisible ? "Visible" : "Hidden"}
+                </button>
+              </div>
+              <p className={`terrain-overlay-card__status terrain-overlay-card__status--${buildingsState}`}>
+                {buildingsStatus}
+              </p>
+              <div className="terrain-overlay-card__actions">
+                <label htmlFor="buildings-opacity">Opacity</label>
+                <output htmlFor="buildings-opacity">
+                  {buildingsOpacity}%
+                </output>
+              </div>
+              <input
+                id="buildings-opacity"
+                type="range"
+                min="0"
+                max="100"
+                value={buildingsOpacity}
+                onChange={(event) =>
+                  setBuildingsOpacity(Number(event.target.value))
+                }
+                style={
+                  {
+                    "--range-progress": `${buildingsOpacity}%`,
+                  } as CSSProperties
+                }
+                disabled={buildingsState !== "ready"}
+              />
+            </section>
 
             <section
               className={`status-card status-card--${terrainState}`}

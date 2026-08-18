@@ -94,6 +94,27 @@ test("switches one cached virtual elevation mosaic between regional catalogs", a
   assert.match(page, /terrainOverlayLayerRef\.current/);
   assert.match(page, /Frame overlay/);
   assert.match(page, /Surface overlay · tinted relief/);
+  assert.match(page, /SWISS_BUILDINGS_SCENE_URL/);
+  assert.match(page, /@arcgis\/core\/layers\/SceneLayer\.js/);
+  assert.match(page, /const buildingsLayer = new SceneLayer/);
+  assert.match(page, /buildingsLayerRef\.current/);
+  assert.match(page, /Scene layer · swissBUILDINGS3D/);
+  assert.match(page, /setBuildingsVisible/);
+  assert.match(page, /setBuildingsOpacity/);
+  assert.doesNotMatch(page, /frameBuildings/i);
+
+  const buildingsLayerIndex = page.indexOf(
+    "const buildingsLayer = new SceneLayer",
+  );
+  const zermattOverlayIndex = page.indexOf(
+    'if (terrainRegion.id === "zermatt")',
+    buildingsLayerIndex,
+  );
+  assert.ok(buildingsLayerIndex >= 0, "buildings SceneLayer should be created");
+  assert.ok(
+    zermattOverlayIndex > buildingsLayerIndex,
+    "buildings should load independently of the Zermatt-only tinted relief",
+  );
 
   const auditIndex = page.indexOf("terrainLayer.auditRegionalCoverage");
   const frameIndex = page.indexOf("await frameTerrain()", auditIndex);
