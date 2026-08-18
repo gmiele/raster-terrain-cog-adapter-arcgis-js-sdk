@@ -51,7 +51,8 @@ export type SwissAltiRegionId =
   | "bern"
   | "chur"
   | "parpan"
-  | "vaz-obervaz";
+  | "vaz-obervaz"
+  | "chur-parpan-vaz-obervaz";
 
 type SwissAltiRegionDefinition = {
   anchorId: string;
@@ -365,19 +366,8 @@ export function createSwissAltiCatalog(
   return catalog;
 }
 
-function createSwissAltiRegion(
-  definition: SwissAltiRegionDefinition,
-): SwissAltiRegionCatalog {
-  const cogs = createSwissAltiCatalog(definition.rows);
-  const cogById = new Map(cogs.map((cog) => [cog.id, cog]));
-  const anchorCog = cogById.get(definition.anchorId);
-  if (!anchorCog) {
-    throw new Error(
-      `SwissALTI region ${definition.id} has no anchor ${definition.anchorId}.`,
-    );
-  }
-
-  const extent = cogs.reduce<ExtentLike>(
+function extentForSwissAltiCogs(cogs: readonly SwissAltiCog[]) {
+  return cogs.reduce<ExtentLike>(
     (current, cog) => ({
       xmin: Math.min(current.xmin, cog.extent.xmin),
       ymin: Math.min(current.ymin, cog.extent.ymin),
@@ -391,6 +381,21 @@ function createSwissAltiRegion(
       ymax: Number.NEGATIVE_INFINITY,
     },
   );
+}
+
+function createSwissAltiRegion(
+  definition: SwissAltiRegionDefinition,
+): SwissAltiRegionCatalog {
+  const cogs = createSwissAltiCatalog(definition.rows);
+  const cogById = new Map(cogs.map((cog) => [cog.id, cog]));
+  const anchorCog = cogById.get(definition.anchorId);
+  if (!anchorCog) {
+    throw new Error(
+      `SwissALTI region ${definition.id} has no anchor ${definition.anchorId}.`,
+    );
+  }
+
+  const extent = extentForSwissAltiCogs(cogs);
   const padding = definition.initialPaddingMeters;
 
   return {
@@ -412,7 +417,64 @@ function createSwissAltiRegion(
   };
 }
 
-export const SWISS_ALTI_REGIONS: readonly SwissAltiRegionCatalog[] = [
+type SwissAltiCompositeRegionDefinition = {
+  anchorId: string;
+  detail: string;
+  id: SwissAltiRegionId;
+  label: string;
+  regions: readonly SwissAltiRegionCatalog[];
+  validationProbes: readonly SwissAltiCoverageProbe[];
+};
+
+function createCompositeSwissAltiRegion(
+  definition: SwissAltiCompositeRegionDefinition,
+): SwissAltiRegionCatalog {
+  const cogByCacheKey = new Map<string, SwissAltiCog>();
+  const coordinateSources = new Map<string, SwissAltiCog>();
+
+  for (const region of definition.regions) {
+    for (const cog of region.cogs) {
+      const coordinateSource = coordinateSources.get(cog.id);
+      if (coordinateSource && coordinateSource.cacheKey !== cog.cacheKey) {
+        throw new Error(
+          `Composite SwissALTI region ${definition.id} has conflicting sources for ${cog.id}.`,
+        );
+      }
+      coordinateSources.set(cog.id, cog);
+      if (!cogByCacheKey.has(cog.cacheKey)) {
+        cogByCacheKey.set(cog.cacheKey, cog);
+      }
+    }
+  }
+
+  const cogs = [...cogByCacheKey.values()].sort(
+    (left, right) =>
+      left.northKm - right.northKm || left.eastKm - right.eastKm,
+  );
+  const cogById = new Map(cogs.map((cog) => [cog.id, cog]));
+  const anchorCog = cogById.get(definition.anchorId);
+  if (!anchorCog) {
+    throw new Error(
+      `Composite SwissALTI region ${definition.id} has no anchor ${definition.anchorId}.`,
+    );
+  }
+  const extent = extentForSwissAltiCogs(cogs);
+
+  return {
+    anchorCog,
+    cogById,
+    cogs,
+    detail: definition.detail,
+    extent,
+    id: definition.id,
+    initialExtent: { ...extent },
+    label: definition.label,
+    validationProbes: definition.validationProbes,
+    years: [...new Set(cogs.map(({ year }) => year))].sort(),
+  };
+}
+
+const SWISS_ALTI_BASE_REGIONS: readonly SwissAltiRegionCatalog[] = [
   createSwissAltiRegion({
     id: "zermatt",
     label: "Zermatt",
@@ -489,6 +551,50 @@ export const SWISS_ALTI_REGIONS: readonly SwissAltiRegionCatalog[] = [
       { id: "interior", x: 2_760_500, y: 1_176_500, expectSources: 1, expectData: true },
       { id: "cross-boundary", x: 2_761_000, y: 1_176_500, expectSources: 2, expectData: true },
       { id: "intentional-hole", x: 2_762_500, y: 1_181_500, expectSources: 0, expectData: false },
+    ],
+  }),
+];
+
+const CHUR_PARPAN_VAZ_REGIONS = ["chur", "parpan", "vaz-obervaz"].map(
+  (id) => {
+    const region = SWISS_ALTI_BASE_REGIONS.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!region) throw new Error(`Missing SwissALTI source region ${id}.`);
+    return region;
+  },
+);
+
+export const SWISS_ALTI_REGIONS: readonly SwissAltiRegionCatalog[] = [
+  ...SWISS_ALTI_BASE_REGIONS,
+  createCompositeSwissAltiRegion({
+    id: "chur-parpan-vaz-obervaz",
+    label: "Chur + Parpan + Vaz/Obervaz",
+    detail: "217 unique tiles · 2023 · 3 municipalities",
+    regions: CHUR_PARPAN_VAZ_REGIONS,
+    anchorId: "2760-1184",
+    validationProbes: [
+      {
+        id: "interior",
+        x: 2_760_500,
+        y: 1_184_500,
+        expectSources: 1,
+        expectData: true,
+      },
+      {
+        id: "cross-boundary",
+        x: 2_761_000,
+        y: 1_183_500,
+        expectSources: 2,
+        expectData: true,
+      },
+      {
+        id: "intentional-hole",
+        x: 2_757_500,
+        y: 1_180_500,
+        expectSources: 0,
+        expectData: false,
+      },
     ],
   }),
 ];
