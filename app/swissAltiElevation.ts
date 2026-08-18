@@ -186,6 +186,8 @@ const SOURCE_FETCH_CONCURRENCY = 6;
 const MAX_COARSE_FACTOR = 32;
 const MAX_OUTPUT_TILE_CACHE_SIZE = 48;
 const OVERVIEW_CHILD_CONCURRENCY = 2;
+const LARGE_CATALOG_SOURCE_COUNT = 1_000;
+const MAX_RECURSIVE_OVERVIEW_SOURCES = 64;
 const COORDINATE_TOLERANCE = 1e-6;
 
 function abortError(signal?: AbortSignal) {
@@ -555,15 +557,17 @@ function summarizeTile(data: ElevationTileData) {
   let validSampleCount = 0;
   let elevationMin = Number.POSITIVE_INFINITY;
   let elevationMax = Number.NEGATIVE_INFINITY;
+  let elevationSum = 0;
 
   for (const value of data.values) {
     if (value === data.noDataValue || !Number.isFinite(value)) continue;
     validSampleCount += 1;
+    elevationSum += value;
     elevationMin = Math.min(elevationMin, value);
     elevationMax = Math.max(elevationMax, value);
   }
 
-  return { validSampleCount, elevationMin, elevationMax };
+  return { validSampleCount, elevationMin, elevationMax, elevationSum };
 }
 
 export function aggregateElevationChildren(
@@ -736,10 +740,10 @@ export function createSwissAltiElevationLayer({
       const size = (this.tileInfo.size?.[0] ?? ELEVATION_TILE_SIZE) + 1;
       const sources = resolveSwissAltiCogs(region, requestExtent);
 
-      const buildDetailTile = async () => {
+      const buildDetailTile = async (tileSources = sources) => {
         const values = new Float32Array(size * size);
         values.fill(ELEVATION_NO_DATA_VALUE);
-        const tasks = sources.map((cog) => async () => {
+        const tasks = tileSources.map((cog) => async () => {
           const window = mosaicWindow(requestExtent, cog.extent, size);
           if (!window) return;
 
@@ -798,6 +802,24 @@ export function createSwissAltiElevationLayer({
           height: size,
           noDataValue: ELEVATION_NO_DATA_VALUE,
         };
+      };
+
+      const buildLargeCatalogOverviewTile = async () => {
+        const representativeSource =
+          sources.find(
+            ({ cacheKey }) => cacheKey === region.anchorCog.cacheKey,
+          ) ?? sources[Math.floor(sources.length / 2)];
+        if (!representativeSource) return buildDetailTile([]);
+        const data = await buildDetailTile([representativeSource]);
+        const summary = summarizeTile(data);
+
+        // A very coarse cache-grid tile can intersect thousands of kilometre
+        // COGs. Use a real COG sample as a bounded bootstrap surface; finer
+        // requests restore the spatial detail and intentional catalog holes.
+        if (summary.validSampleCount > 0) {
+          data.values.fill(summary.elevationSum / summary.validSampleCount);
+        }
+        return data;
       };
 
       const buildOverviewTile = async () => {
@@ -861,10 +883,17 @@ export function createSwissAltiElevationLayer({
         );
       };
 
+      const usesBoundedLargeCatalogOverview =
+        tilingProfile === "elevation-suisse" &&
+        level < ELEVATION_SUISSE_DETAIL_LOD &&
+        region.cogs.length >= LARGE_CATALOG_SOURCE_COUNT &&
+        sources.length > MAX_RECURSIVE_OVERVIEW_SOURCES;
       const buildTile =
         tilingProfile === "elevation-suisse" &&
         level < ELEVATION_SUISSE_DETAIL_LOD
-          ? buildOverviewTile
+          ? usesBoundedLargeCatalogOverview
+            ? buildLargeCatalogOverviewTile
+            : buildOverviewTile
           : buildDetailTile;
 
       if (tilingProfile === "regional") return buildTile();

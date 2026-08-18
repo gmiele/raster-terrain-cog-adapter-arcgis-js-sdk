@@ -53,6 +53,10 @@ test("routes the third mode through a COG-only custom ground", async () => {
   assert.doesNotMatch(adapter, /sampleOverviewElevation/);
   assert.match(adapter, /cache-grid LOD \$\{level\} overview returned no terrain/);
   assert.match(adapter, /resolveSwissAltiCogs\(region, requestExtent\)/);
-  assert.match(source, /return region\.cogs\.filter/);
-  assert.doesNotMatch(source, /for \(let northKm = minNorthKm/);
+  assert.match(adapter, /LARGE_CATALOG_SOURCE_COUNT/);
+  assert.match(adapter, /MAX_RECURSIVE_OVERVIEW_SOURCES/);
+  assert.match(adapter, /buildLargeCatalogOverviewTile/);
+  assert.match(source, /region\.cogById\.get/);
+  assert.match(source, /for \(let northKm = minNorthKm/);
+  assert.doesNotMatch(source, /return region\.cogs\.filter/);
 });
