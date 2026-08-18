@@ -45,7 +45,13 @@ export type SwissAltiCoverageProbe = {
   y: number;
 };
 
-export type SwissAltiRegionId = "zermatt" | "zurich" | "bern" | "chur";
+export type SwissAltiRegionId =
+  | "zermatt"
+  | "zurich"
+  | "bern"
+  | "chur"
+  | "parpan"
+  | "vaz-obervaz";
 
 type SwissAltiRegionDefinition = {
   anchorId: string;
@@ -274,11 +280,48 @@ export const SWISS_ALTI_CHUR_CATALOG_RUNS = [
   [2023, 1196, [[2757, 2760]]],
 ] as const satisfies readonly SwissAltiCatalogRunRow[];
 
+// Exact compact representation of the 71 URLs supplied for Parpan.
+export const SWISS_ALTI_PARPAN_CATALOG_RUNS = [
+  [2023, 1179, [[2763, 2763]]],
+  [2023, 1180, [[2758, 2763]]],
+  [2023, 1181, [[2757, 2764]]],
+  [2023, 1182, [[2756, 2764]]],
+  [2023, 1183, [[2756, 2764]]],
+  [2023, 1184, [[2756, 2763]]],
+  [2023, 1185, [[2756, 2763]]],
+  [2023, 1186, [[2756, 2762]]],
+  [2023, 1187, [[2756, 2762]]],
+  [2023, 1188, [[2757, 2762]]],
+  [2023, 1189, [[2760, 2761]]],
+] as const satisfies readonly SwissAltiCatalogRunRow[];
+
+// Exact compact representation of the 65 URLs supplied for Vaz/Obervaz.
+export const SWISS_ALTI_VAZ_OBERVAZ_CATALOG_RUNS = [
+  [2023, 1171, [[2758, 2759]]],
+  [2023, 1172, [[2757, 2760]]],
+  [2023, 1173, [[2757, 2761]]],
+  [2023, 1174, [[2756, 2761]]],
+  [2023, 1175, [[2756, 2761]]],
+  [2023, 1176, [[2757, 2763]]],
+  [2023, 1177, [[2758, 2763]]],
+  [2023, 1178, [[2758, 2764]]],
+  [2023, 1179, [[2758, 2765]]],
+  [2023, 1180, [[2758, 2765]]],
+  [2023, 1181, [[2760, 2761], [2763, 2765]]],
+  [2023, 1182, [[2764, 2764]]],
+] as const satisfies readonly SwissAltiCatalogRunRow[];
+
 export const SWISS_ALTI_BERN_CATALOG_ROWS = expandSwissAltiCatalogRuns(
   SWISS_ALTI_BERN_CATALOG_RUNS,
 );
 export const SWISS_ALTI_CHUR_CATALOG_ROWS = expandSwissAltiCatalogRuns(
   SWISS_ALTI_CHUR_CATALOG_RUNS,
+);
+export const SWISS_ALTI_PARPAN_CATALOG_ROWS = expandSwissAltiCatalogRuns(
+  SWISS_ALTI_PARPAN_CATALOG_RUNS,
+);
+export const SWISS_ALTI_VAZ_OBERVAZ_CATALOG_ROWS = expandSwissAltiCatalogRuns(
+  SWISS_ALTI_VAZ_OBERVAZ_CATALOG_RUNS,
 );
 
 export function createSwissAltiCog(
@@ -420,6 +463,32 @@ export const SWISS_ALTI_REGIONS: readonly SwissAltiRegionCatalog[] = [
       { id: "interior", x: 2_760_500, y: 1_189_500, expectSources: 1, expectData: true },
       { id: "cross-boundary", x: 2_761_000, y: 1_188_500, expectSources: 2, expectData: true },
       { id: "intentional-hole", x: 2_761_500, y: 1_187_500, expectSources: 0, expectData: false },
+    ],
+  }),
+  createSwissAltiRegion({
+    id: "parpan",
+    label: "Parpan",
+    detail: "71 tiles · 2023 · Graubünden",
+    rows: SWISS_ALTI_PARPAN_CATALOG_ROWS,
+    anchorId: "2760-1184",
+    initialPaddingMeters: 2_000,
+    validationProbes: [
+      { id: "interior", x: 2_760_500, y: 1_184_500, expectSources: 1, expectData: true },
+      { id: "cross-boundary", x: 2_760_000, y: 1_184_500, expectSources: 2, expectData: true },
+      { id: "intentional-hole", x: 2_763_500, y: 1_186_500, expectSources: 0, expectData: false },
+    ],
+  }),
+  createSwissAltiRegion({
+    id: "vaz-obervaz",
+    label: "Vaz/Obervaz",
+    detail: "65 tiles · 2023 · Graubünden",
+    rows: SWISS_ALTI_VAZ_OBERVAZ_CATALOG_ROWS,
+    anchorId: "2760-1176",
+    initialPaddingMeters: 2_000,
+    validationProbes: [
+      { id: "interior", x: 2_760_500, y: 1_176_500, expectSources: 1, expectData: true },
+      { id: "cross-boundary", x: 2_761_000, y: 1_176_500, expectSources: 2, expectData: true },
+      { id: "intentional-hole", x: 2_762_500, y: 1_181_500, expectSources: 0, expectData: false },
     ],
   }),
 ];

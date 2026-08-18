@@ -53,6 +53,11 @@ test("keeps complete, independent SwissALTI regional catalogs", async () => {
   const zurich = parseCatalog(source, "SWISS_ALTI_ZURICH_CATALOG_ROWS");
   const bern = parseCatalogRuns(source, "SWISS_ALTI_BERN_CATALOG_RUNS");
   const chur = parseCatalogRuns(source, "SWISS_ALTI_CHUR_CATALOG_RUNS");
+  const parpan = parseCatalogRuns(source, "SWISS_ALTI_PARPAN_CATALOG_RUNS");
+  const vazObervaz = parseCatalogRuns(
+    source,
+    "SWISS_ALTI_VAZ_OBERVAZ_CATALOG_RUNS",
+  );
 
   assert.equal(zermatt.length, 298);
   assert.equal(new Set(zermatt.map(({ id }) => id)).size, 298);
@@ -90,6 +95,26 @@ test("keeps complete, independent SwissALTI regional catalogs", async () => {
   assert.equal(Math.max(...chur.map(({ north }) => north)), 1196);
   assert.ok(chur.some(({ id }) => id === "2760-1189"));
   assert.ok(!chur.some(({ id }) => id === "2761-1187"));
+
+  assert.equal(parpan.length, 71);
+  assert.equal(new Set(parpan.map(({ id }) => id)).size, 71);
+  assert.deepEqual([...new Set(parpan.map(({ year }) => year))], [2023]);
+  assert.equal(Math.min(...parpan.map(({ east }) => east)), 2756);
+  assert.equal(Math.max(...parpan.map(({ east }) => east)), 2764);
+  assert.equal(Math.min(...parpan.map(({ north }) => north)), 1179);
+  assert.equal(Math.max(...parpan.map(({ north }) => north)), 1189);
+  assert.ok(parpan.some(({ id }) => id === "2760-1184"));
+  assert.ok(!parpan.some(({ id }) => id === "2763-1186"));
+
+  assert.equal(vazObervaz.length, 65);
+  assert.equal(new Set(vazObervaz.map(({ id }) => id)).size, 65);
+  assert.deepEqual([...new Set(vazObervaz.map(({ year }) => year))], [2023]);
+  assert.equal(Math.min(...vazObervaz.map(({ east }) => east)), 2756);
+  assert.equal(Math.max(...vazObervaz.map(({ east }) => east)), 2765);
+  assert.equal(Math.min(...vazObervaz.map(({ north }) => north)), 1171);
+  assert.equal(Math.max(...vazObervaz.map(({ north }) => north)), 1182);
+  assert.ok(vazObervaz.some(({ id }) => id === "2760-1176"));
+  assert.ok(!vazObervaz.some(({ id }) => id === "2762-1181"));
 });
 
 test("preserves source years and creates region-scoped lookup state", async () => {
@@ -98,17 +123,20 @@ test("preserves source years and creates region-scoped lookup state", async () =
     "utf8",
   );
 
-  assert.match(
-    source,
-    /type SwissAltiRegionId = "zermatt" \| "zurich" \| "bern" \| "chur"/,
-  );
+  assert.match(source, /type SwissAltiRegionId =/);
+  assert.match(source, /\| "parpan"/);
+  assert.match(source, /\| "vaz-obervaz"/);
   assert.match(source, /SWISS_ALTI_REGIONS/);
   assert.match(source, /label: "Zürich"/);
   assert.match(source, /label: "Canton Bern"/);
   assert.match(source, /label: "Chur"/);
+  assert.match(source, /label: "Parpan"/);
+  assert.match(source, /label: "Vaz\/Obervaz"/);
   assert.match(source, /detail: "124 tiles · 2019–2020 · Swiss Plateau"/);
   assert.match(source, /detail: "6,380 tiles · 2021 & 2025 · Swiss Plateau and Alps"/);
   assert.match(source, /detail: "114 tiles · 2023 · Graubünden"/);
+  assert.match(source, /detail: "71 tiles · 2023 · Graubünden"/);
+  assert.match(source, /detail: "65 tiles · 2023 · Graubünden"/);
   assert.match(source, /expandSwissAltiCatalogRuns/);
   assert.match(source, /createSwissAltiCog\(year, eastKm, northKm\)/);
   assert.match(source, /swissalti3d_\$\{year\}_\$\{id\}/);
@@ -121,12 +149,14 @@ test("preserves source years and creates region-scoped lookup state", async () =
   assert.doesNotMatch(source, /swissalti3d_2024_\$\{id\}/);
 });
 
-test("resolves Bern and Chur coverage without filling catalog holes", async () => {
+test("resolves regional coverage without filling catalog holes", async () => {
   const { getSwissAltiRegion, resolveSwissAltiCogs } = await import(
     "../app/swissAltiSource.ts"
   );
   const bern = getSwissAltiRegion("bern");
   const chur = getSwissAltiRegion("chur");
+  const parpan = getSwissAltiRegion("parpan");
+  const vazObervaz = getSwissAltiRegion("vaz-obervaz");
 
   assert.equal(
     resolveSwissAltiCogs(bern, {
@@ -193,6 +223,67 @@ test("resolves Bern and Chur coverage without filling catalog holes", async () =
     }).length,
     0,
   );
+
+  assert.equal(
+    resolveSwissAltiCogs(parpan, {
+      xmin: 2_760_400,
+      ymin: 1_184_400,
+      xmax: 2_760_600,
+      ymax: 1_184_600,
+    }).length,
+    1,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(parpan, {
+      xmin: 2_759_999,
+      ymin: 1_184_400,
+      xmax: 2_760_001,
+      ymax: 1_184_600,
+    }).length,
+    2,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(parpan, {
+      xmin: 2_763_400,
+      ymin: 1_186_400,
+      xmax: 2_763_600,
+      ymax: 1_186_600,
+    }).length,
+    0,
+  );
+
+  assert.equal(
+    resolveSwissAltiCogs(vazObervaz, {
+      xmin: 2_760_400,
+      ymin: 1_176_400,
+      xmax: 2_760_600,
+      ymax: 1_176_600,
+    }).length,
+    1,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(vazObervaz, {
+      xmin: 2_760_999,
+      ymin: 1_176_400,
+      xmax: 2_761_001,
+      ymax: 1_176_600,
+    }).length,
+    2,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(vazObervaz, {
+      xmin: 2_762_400,
+      ymin: 1_181_400,
+      xmax: 2_762_600,
+      ymax: 1_181_600,
+    }).length,
+    0,
+  );
+
+  assert.ok(parpan.cogById.has("2760-1180"));
+  assert.ok(vazObervaz.cogById.has("2760-1180"));
+  assert.ok(chur.cogById.has("2764-1181"));
+  assert.ok(vazObervaz.cogById.has("2764-1181"));
 });
 
 test("switches one cached virtual elevation mosaic between regional catalogs", async () => {
