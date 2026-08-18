@@ -131,6 +131,10 @@ const EXAMPLE_GROUPS: ExampleDataset["group"][] = [
   "Specialized rasters",
 ];
 
+const TERRAIN_REGION_OPTIONS = SWISS_ALTI_REGIONS.filter(
+  ({ id }) => id !== "bern",
+);
+
 type RasterDetails = {
   name: string;
   host: string;
@@ -1942,7 +1946,7 @@ export default function Home() {
             <section className="example-picker terrain-region-picker">
               <div className="example-picker__heading">
                 <label htmlFor="terrain-region">Terrain catalog</label>
-                <span>{SWISS_ALTI_REGIONS.length} regions</span>
+                <span>{TERRAIN_REGION_OPTIONS.length} regions</span>
               </div>
               <div className="select-field">
                 <select
@@ -1952,7 +1956,7 @@ export default function Home() {
                     setTerrainRegionId(event.target.value as SwissAltiRegionId)
                   }
                 >
-                  {SWISS_ALTI_REGIONS.map((region) => (
+                  {TERRAIN_REGION_OPTIONS.map((region) => (
                     <option key={region.id} value={region.id}>
                       {region.label} · {region.cogs.length} COGs
                     </option>

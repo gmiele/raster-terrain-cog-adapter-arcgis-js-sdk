@@ -202,7 +202,9 @@ test("switches one cached virtual elevation mosaic between regional catalogs", a
   ]);
 
   assert.match(page, /id="terrain-region"/);
-  assert.match(page, /SWISS_ALTI_REGIONS\.map/);
+  assert.match(page, /TERRAIN_REGION_OPTIONS\.map/);
+  assert.match(page, /TERRAIN_REGION_OPTIONS = SWISS_ALTI_REGIONS\.filter/);
+  assert.match(page, /\(\{ id \}\) => id !== "bern"/);
   assert.match(page, /setTerrainRegionId/);
   assert.match(page, /prepareSwissAltiCatalog\(\s*ImageryTileLayer,\s*terrainRegion,/);
   assert.match(page, /terrainRegion\.initialExtent/);

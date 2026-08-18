@@ -34,6 +34,7 @@ test("server-renders all three Raster Terrain Lab modes", async () => {
   assert.match(html, /SwissALTI terrain/);
   assert.match(html, /Swiss cache grid/);
   assert.match(html, /Zürich/);
+  assert.doesNotMatch(html, /Canton Bern/);
   assert.match(html, /Bring a cloud raster into 3D/);
   assert.match(html, /ArcGIS JS SDK/);
 });
@@ -52,6 +53,8 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.match(adapter, /ImageryTileLayer/);
   assert.match(adapter, /fetchPixels/);
   assert.match(page, /Ground validation/);
+  assert.match(page, /TERRAIN_REGION_OPTIONS = SWISS_ALTI_REGIONS\.filter/);
+  assert.match(page, /\(\{ id \}\) => id !== "bern"/);
   assert.match(page, /ground verified/);
   assert.match(page, /interior, seam, and no-data probes passed/);
   assert.doesNotMatch(page, /queryElevation|center elevation/i);
