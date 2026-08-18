@@ -101,6 +101,11 @@ test("switches one cached virtual elevation mosaic between regional catalogs", a
   assert.match(page, /Scene layer · swissBUILDINGS3D/);
   assert.match(page, /setBuildingsVisible/);
   assert.match(page, /setBuildingsOpacity/);
+  assert.match(page, /const buildingsVisibleRef = useRef\(false\)/);
+  assert.match(
+    page,
+    /const \[buildingsVisible, setBuildingsVisible\] = useState\(false\)/,
+  );
   assert.doesNotMatch(page, /frameBuildings/i);
 
   const buildingsLayerIndex = page.indexOf(

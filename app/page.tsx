@@ -363,7 +363,7 @@ export default function Home() {
   const terrainOverlayOpacityRef = useRef(82);
   const terrainOverlayVisibleRef = useRef(true);
   const buildingsOpacityRef = useRef(90);
-  const buildingsVisibleRef = useRef(true);
+  const buildingsVisibleRef = useRef(false);
 
   const [sdkReady, setSdkReady] = useState(false);
   const [mode, setMode] = useState<AppMode>("imagery");
@@ -388,7 +388,7 @@ export default function Home() {
     "Waiting for the local terrain scene…",
   );
   const [buildingsOpacity, setBuildingsOpacity] = useState(90);
-  const [buildingsVisible, setBuildingsVisible] = useState(true);
+  const [buildingsVisible, setBuildingsVisible] = useState(false);
   const [terrainStatus, setTerrainStatus] = useState(
     "Preparing local EPSG:2056 scene…",
   );
