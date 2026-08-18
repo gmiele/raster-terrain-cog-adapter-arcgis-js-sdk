@@ -51,10 +51,12 @@ The adapter deliberately supports a narrow, consistent terrain dataset. Every ac
 
 These constraints are crucial. Because all sources use the same coordinate system, resolution, and grid alignment, the application can compose them without a reprojection step.
 
-The current catalog contains two selectable regions:
+The current catalog contains four selectable regions:
 
 - Zermatt: 298 COGs from 2024.
 - Zürich: 124 COGs from 2019 and 2020.
+- Canton Bern: 6,380 COGs from 2021 and 2025.
+- Chur: 114 COGs from 2023.
 
 ## 1. Building and querying the COG catalog
 
