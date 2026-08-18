@@ -68,8 +68,9 @@ test("nests terrain analysis tools in six grouped expands", async () => {
   assert.match(page, /key: "terrain-line-of-sight-expand"/);
   assert.match(page, /key: "terrain-viewshed-expand"/);
   assert.match(page, /key: "terrain-volume-measurement-expand"/);
-  assert.match(page, /icon: "viewshed"/);
-  assert.match(page, /icon: "cut-and-fill-volume-calculation"/);
+  assert.match(page, /"expand-icon": "viewshed"/);
+  assert.match(page, /"expand-icon": "cut-and-fill-volume-calculation"/);
+  assert.doesNotMatch(page, /\bicon: "(?:viewshed|cut-and-fill-volume-calculation)"/);
   assert.match(page, /key: "terrain-elevation-profile-expand"/);
   assert.match(page, /createElement\("arcgis-daylight"/);
   assert.match(page, /createElement\("arcgis-direct-line-measurement-3d"/);

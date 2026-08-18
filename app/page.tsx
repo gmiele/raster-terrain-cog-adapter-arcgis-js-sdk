@@ -220,8 +220,8 @@ type ArcGISExpandAttributes = DetailedHTMLProps<
   HTMLAttributes<ArcGISExpandElement>,
   ArcGISExpandElement
 > & {
+  "expand-icon"?: string;
   group?: string;
-  icon?: string;
   label?: string;
   mode?: "auto" | "drawer" | "floating";
 };
@@ -1406,7 +1406,7 @@ export default function Home() {
                   key: "terrain-daylight-expand",
                   slot: "top-right",
                   group: "terrain-tools",
-                  icon: "brightness",
+                  "expand-icon": "brightness",
                   label: "Daylight",
                   mode: "floating",
                   suppressHydrationWarning: true,
@@ -1423,7 +1423,7 @@ export default function Home() {
                   ref: measurementExpandRef,
                   slot: "top-right",
                   group: "terrain-tools",
-                  icon: "measure",
+                  "expand-icon": "measure",
                   label: "Measurements",
                   mode: "floating",
                   suppressHydrationWarning: true,
@@ -1474,7 +1474,7 @@ export default function Home() {
                   ref: lineOfSightExpandRef,
                   slot: "top-right",
                   group: "terrain-tools",
-                  icon: "line-of-sight",
+                  "expand-icon": "line-of-sight",
                   label: "Line of sight",
                   mode: "floating",
                   suppressHydrationWarning: true,
@@ -1492,7 +1492,7 @@ export default function Home() {
                   ref: viewshedExpandRef,
                   slot: "top-right",
                   group: "terrain-tools",
-                  icon: "viewshed",
+                  "expand-icon": "viewshed",
                   label: "Viewshed",
                   mode: "floating",
                   suppressHydrationWarning: true,
@@ -1563,7 +1563,7 @@ export default function Home() {
                   ref: volumeMeasurementExpandRef,
                   slot: "top-right",
                   group: "terrain-tools",
-                  icon: "cut-and-fill-volume-calculation",
+                  "expand-icon": "cut-and-fill-volume-calculation",
                   label: "Volume measurement",
                   mode: "floating",
                   suppressHydrationWarning: true,
@@ -1588,7 +1588,7 @@ export default function Home() {
                   ref: elevationProfileExpandRef,
                   slot: "top-right",
                   group: "terrain-tools",
-                  icon: "altitude",
+                  "expand-icon": "altitude",
                   label: "Elevation profile",
                   mode: "floating",
                   suppressHydrationWarning: true,
