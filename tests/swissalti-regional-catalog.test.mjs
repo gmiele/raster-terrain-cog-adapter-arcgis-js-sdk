@@ -58,6 +58,7 @@ test("keeps complete, independent SwissALTI regional catalogs", async () => {
     source,
     "SWISS_ALTI_VAZ_OBERVAZ_CATALOG_RUNS",
   );
+  const lenz = parseCatalogRuns(source, "SWISS_ALTI_LENZ_CATALOG_RUNS");
 
   assert.equal(zermatt.length, 298);
   assert.equal(new Set(zermatt.map(({ id }) => id)).size, 298);
@@ -115,6 +116,16 @@ test("keeps complete, independent SwissALTI regional catalogs", async () => {
   assert.equal(Math.max(...vazObervaz.map(({ north }) => north)), 1182);
   assert.ok(vazObervaz.some(({ id }) => id === "2760-1176"));
   assert.ok(!vazObervaz.some(({ id }) => id === "2762-1181"));
+
+  assert.equal(lenz.length, 40);
+  assert.equal(new Set(lenz.map(({ id }) => id)).size, 40);
+  assert.deepEqual([...new Set(lenz.map(({ year }) => year))], [2023]);
+  assert.equal(Math.min(...lenz.map(({ east }) => east)), 2760);
+  assert.equal(Math.max(...lenz.map(({ east }) => east)), 2766);
+  assert.equal(Math.min(...lenz.map(({ north }) => north)), 1171);
+  assert.equal(Math.max(...lenz.map(({ north }) => north)), 1179);
+  assert.ok(lenz.some(({ id }) => id === "2763-1175"));
+  assert.ok(!lenz.some(({ id }) => id === "2762-1178"));
 });
 
 test("preserves source years and creates region-scoped lookup state", async () => {
@@ -126,6 +137,7 @@ test("preserves source years and creates region-scoped lookup state", async () =
   assert.match(source, /type SwissAltiRegionId =/);
   assert.match(source, /\| "parpan"/);
   assert.match(source, /\| "vaz-obervaz"/);
+  assert.match(source, /\| "lenz"/);
   assert.match(source, /\| "chur-parpan-vaz-obervaz"/);
   assert.match(source, /SWISS_ALTI_REGIONS/);
   assert.match(source, /label: "Zürich"/);
@@ -133,13 +145,15 @@ test("preserves source years and creates region-scoped lookup state", async () =
   assert.match(source, /label: "Chur"/);
   assert.match(source, /label: "Parpan"/);
   assert.match(source, /label: "Vaz\/Obervaz"/);
-  assert.match(source, /label: "Chur \+ Parpan \+ Vaz\/Obervaz"/);
+  assert.match(source, /label: "Lenz"/);
+  assert.match(source, /label: "Chur \+ Parpan \+ Vaz\/Obervaz \+ Lenz"/);
   assert.match(source, /detail: "124 tiles · 2019–2020 · Swiss Plateau"/);
   assert.match(source, /detail: "6,380 tiles · 2021 & 2025 · Swiss Plateau and Alps"/);
   assert.match(source, /detail: "114 tiles · 2023 · Graubünden"/);
   assert.match(source, /detail: "71 tiles · 2023 · Graubünden"/);
   assert.match(source, /detail: "65 tiles · 2023 · Graubünden"/);
-  assert.match(source, /detail: "217 unique tiles · 2023 · 3 municipalities"/);
+  assert.match(source, /detail: "40 tiles · 2023 · Graubünden"/);
+  assert.match(source, /detail: "245 unique tiles · 2023 · 4 municipalities"/);
   assert.match(source, /createCompositeSwissAltiRegion/);
   assert.match(source, /cogByCacheKey/);
   assert.match(source, /coordinateSource\.cacheKey !== cog\.cacheKey/);
@@ -164,11 +178,12 @@ test("resolves regional coverage without filling catalog holes", async () => {
   const chur = getSwissAltiRegion("chur");
   const parpan = getSwissAltiRegion("parpan");
   const vazObervaz = getSwissAltiRegion("vaz-obervaz");
+  const lenz = getSwissAltiRegion("lenz");
   const combined = getSwissAltiRegion("chur-parpan-vaz-obervaz");
 
-  assert.equal(combined.cogs.length, 217);
-  assert.equal(combined.cogById.size, 217);
-  assert.equal(new Set(combined.cogs.map(({ cacheKey }) => cacheKey)).size, 217);
+  assert.equal(combined.cogs.length, 245);
+  assert.equal(combined.cogById.size, 245);
+  assert.equal(new Set(combined.cogs.map(({ cacheKey }) => cacheKey)).size, 245);
   assert.deepEqual(combined.years, [2023]);
   assert.equal(combined.anchorCog.id, "2760-1184");
   assert.deepEqual(combined.extent, {
@@ -179,9 +194,12 @@ test("resolves regional coverage without filling catalog holes", async () => {
   });
   assert.deepEqual(combined.initialExtent, combined.extent);
   assert.equal(
-    chur.cogs.length + parpan.cogs.length + vazObervaz.cogs.length -
+    chur.cogs.length +
+      parpan.cogs.length +
+      vazObervaz.cogs.length +
+      lenz.cogs.length -
       combined.cogs.length,
-    33,
+    45,
   );
   assert.equal(
     combined.cogById.get("2760-1180"),
@@ -190,6 +208,14 @@ test("resolves regional coverage without filling catalog holes", async () => {
   assert.equal(
     combined.cogById.get("2764-1181"),
     chur.cogById.get("2764-1181"),
+  );
+  assert.equal(
+    combined.cogById.get("2761-1176"),
+    vazObervaz.cogById.get("2761-1176"),
+  );
+  assert.equal(
+    combined.cogById.get("2766-1175"),
+    lenz.cogById.get("2766-1175"),
   );
 
   assert.equal(
@@ -315,6 +341,34 @@ test("resolves regional coverage without filling catalog holes", async () => {
   );
 
   assert.equal(
+    resolveSwissAltiCogs(lenz, {
+      xmin: 2_763_400,
+      ymin: 1_175_400,
+      xmax: 2_763_600,
+      ymax: 1_175_600,
+    }).length,
+    1,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(lenz, {
+      xmin: 2_763_999,
+      ymin: 1_175_400,
+      xmax: 2_764_001,
+      ymax: 1_175_600,
+    }).length,
+    2,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(lenz, {
+      xmin: 2_762_400,
+      ymin: 1_178_400,
+      xmax: 2_762_600,
+      ymax: 1_178_600,
+    }).length,
+    0,
+  );
+
+  assert.equal(
     resolveSwissAltiCogs(combined, {
       xmin: 2_760_400,
       ymin: 1_184_400,
@@ -340,6 +394,15 @@ test("resolves regional coverage without filling catalog holes", async () => {
       ymax: 1_180_600,
     }).length,
     0,
+  );
+  assert.equal(
+    resolveSwissAltiCogs(combined, {
+      xmin: 2_766_400,
+      ymin: 1_175_400,
+      xmax: 2_766_600,
+      ymax: 1_175_600,
+    }).length,
+    1,
   );
 
   assert.ok(parpan.cogById.has("2760-1180"));

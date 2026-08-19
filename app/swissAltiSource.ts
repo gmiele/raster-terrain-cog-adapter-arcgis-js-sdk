@@ -52,6 +52,7 @@ export type SwissAltiRegionId =
   | "chur"
   | "parpan"
   | "vaz-obervaz"
+  | "lenz"
   | "chur-parpan-vaz-obervaz";
 
 type SwissAltiRegionDefinition = {
@@ -312,6 +313,19 @@ export const SWISS_ALTI_VAZ_OBERVAZ_CATALOG_RUNS = [
   [2023, 1182, [[2764, 2764]]],
 ] as const satisfies readonly SwissAltiCatalogRunRow[];
 
+// Exact compact representation of the 40 URLs supplied for Lenz.
+export const SWISS_ALTI_LENZ_CATALOG_RUNS = [
+  [2023, 1171, [[2761, 2764]]],
+  [2023, 1172, [[2761, 2764]]],
+  [2023, 1173, [[2760, 2764]]],
+  [2023, 1174, [[2761, 2765]]],
+  [2023, 1175, [[2761, 2766]]],
+  [2023, 1176, [[2761, 2766]]],
+  [2023, 1177, [[2763, 2766]]],
+  [2023, 1178, [[2763, 2766]]],
+  [2023, 1179, [[2764, 2765]]],
+] as const satisfies readonly SwissAltiCatalogRunRow[];
+
 export const SWISS_ALTI_BERN_CATALOG_ROWS = expandSwissAltiCatalogRuns(
   SWISS_ALTI_BERN_CATALOG_RUNS,
 );
@@ -323,6 +337,9 @@ export const SWISS_ALTI_PARPAN_CATALOG_ROWS = expandSwissAltiCatalogRuns(
 );
 export const SWISS_ALTI_VAZ_OBERVAZ_CATALOG_ROWS = expandSwissAltiCatalogRuns(
   SWISS_ALTI_VAZ_OBERVAZ_CATALOG_RUNS,
+);
+export const SWISS_ALTI_LENZ_CATALOG_ROWS = expandSwissAltiCatalogRuns(
+  SWISS_ALTI_LENZ_CATALOG_RUNS,
 );
 
 export function createSwissAltiCog(
@@ -553,25 +570,41 @@ const SWISS_ALTI_BASE_REGIONS: readonly SwissAltiRegionCatalog[] = [
       { id: "intentional-hole", x: 2_762_500, y: 1_181_500, expectSources: 0, expectData: false },
     ],
   }),
+  createSwissAltiRegion({
+    id: "lenz",
+    label: "Lenz",
+    detail: "40 tiles · 2023 · Graubünden",
+    rows: SWISS_ALTI_LENZ_CATALOG_ROWS,
+    anchorId: "2763-1175",
+    initialPaddingMeters: 2_000,
+    validationProbes: [
+      { id: "interior", x: 2_763_500, y: 1_175_500, expectSources: 1, expectData: true },
+      { id: "cross-boundary", x: 2_764_000, y: 1_175_500, expectSources: 2, expectData: true },
+      { id: "intentional-hole", x: 2_762_500, y: 1_178_500, expectSources: 0, expectData: false },
+    ],
+  }),
 ];
 
-const CHUR_PARPAN_VAZ_REGIONS = ["chur", "parpan", "vaz-obervaz"].map(
-  (id) => {
-    const region = SWISS_ALTI_BASE_REGIONS.find(
-      (candidate) => candidate.id === id,
-    );
-    if (!region) throw new Error(`Missing SwissALTI source region ${id}.`);
-    return region;
-  },
-);
+const CHUR_PARPAN_VAZ_LENZ_REGIONS = [
+  "chur",
+  "parpan",
+  "vaz-obervaz",
+  "lenz",
+].map((id) => {
+  const region = SWISS_ALTI_BASE_REGIONS.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!region) throw new Error(`Missing SwissALTI source region ${id}.`);
+  return region;
+});
 
 export const SWISS_ALTI_REGIONS: readonly SwissAltiRegionCatalog[] = [
   ...SWISS_ALTI_BASE_REGIONS,
   createCompositeSwissAltiRegion({
     id: "chur-parpan-vaz-obervaz",
-    label: "Chur + Parpan + Vaz/Obervaz",
-    detail: "217 unique tiles · 2023 · 3 municipalities",
-    regions: CHUR_PARPAN_VAZ_REGIONS,
+    label: "Chur + Parpan + Vaz/Obervaz + Lenz",
+    detail: "245 unique tiles · 2023 · 4 municipalities",
+    regions: CHUR_PARPAN_VAZ_LENZ_REGIONS,
     anchorId: "2760-1184",
     validationProbes: [
       {
