@@ -1,4 +1,4 @@
-# Raster Terrain Lab — 3D COG Viewer
+# Cloud-Optimized GeoTIFF for 3D Terrain
 
 An experimental web application that uses the ArcGIS Maps SDK for JavaScript to open Cloud-Optimized GeoTIFFs (COGs) directly and turn collections of swissALTI3D elevation COGs into interactive 3D terrain in the browser.
 
