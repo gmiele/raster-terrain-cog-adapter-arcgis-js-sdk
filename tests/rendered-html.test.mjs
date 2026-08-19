@@ -60,6 +60,26 @@ test("keeps the experimental scene on web components and EPSG:2056", async () =>
   assert.doesNotMatch(page, /queryElevation|center elevation/i);
 });
 
+test("adds shared zoom and compass controls to all three scene modes", async () => {
+  const page = await readFile(
+    new URL("../app/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(page, /const navigationControls = \[/);
+  assert.match(
+    page,
+    /createElement\("arcgis-zoom", \{[\s\S]*?key: "scene-zoom",[\s\S]*?slot: "bottom-left"/,
+  );
+  assert.match(
+    page,
+    /createElement\("arcgis-compass", \{[\s\S]*?key: "scene-compass",[\s\S]*?slot: "bottom-left"/,
+  );
+  assert.match(page, /\.\.\.navigationControls/);
+  assert.equal(page.match(/createElement\("arcgis-zoom"/g)?.length, 1);
+  assert.equal(page.match(/createElement\("arcgis-compass"/g)?.length, 1);
+});
+
 test("nests terrain analysis tools in six grouped expands", async () => {
   const page = await readFile(
     new URL("../app/page.tsx", import.meta.url),

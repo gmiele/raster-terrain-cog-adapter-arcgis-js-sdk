@@ -239,6 +239,13 @@ type ArcGISDaylightAttributes = DetailedHTMLProps<
   label?: string;
 };
 
+type ArcGISNavigationAttributes = DetailedHTMLProps<
+  HTMLAttributes<HTMLElement>,
+  HTMLElement
+> & {
+  label?: string;
+};
+
 type ArcGISMeasurementAttributes = DetailedHTMLProps<
   HTMLAttributes<ArcGISMeasurementElement>,
   ArcGISMeasurementElement
@@ -1443,6 +1450,21 @@ export default function Home() {
   const activeState = mode === "imagery" ? loadState : terrainState;
   const frameEnabled = activeState === "ready";
 
+  const navigationControls = [
+    createElement("arcgis-zoom", {
+      key: "scene-zoom",
+      slot: "bottom-left",
+      label: "Zoom",
+      suppressHydrationWarning: true,
+    } as ArcGISNavigationAttributes),
+    createElement("arcgis-compass", {
+      key: "scene-compass",
+      slot: "bottom-left",
+      label: "Compass",
+      suppressHydrationWarning: true,
+    } as ArcGISNavigationAttributes),
+  ];
+
   /* eslint-disable react-hooks/refs -- React owns this custom-element ref; it is not read while rendering. */
   const scene = sdkReady
     ? createElement(
@@ -1688,6 +1710,7 @@ export default function Home() {
                 } as ArcGISElevationProfileAttributes),
               ),
             ]),
+        ...navigationControls,
       )
     : null;
   /* eslint-enable react-hooks/refs */
