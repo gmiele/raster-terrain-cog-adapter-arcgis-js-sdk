@@ -1451,12 +1451,6 @@ export default function Home() {
   const frameEnabled = activeState === "ready";
 
   const navigationControls = [
-    createElement("arcgis-zoom", {
-      key: "scene-zoom",
-      slot: "bottom-left",
-      label: "Zoom",
-      suppressHydrationWarning: true,
-    } as ArcGISNavigationAttributes),
     createElement("arcgis-compass", {
       key: "scene-compass",
       slot: "bottom-left",
