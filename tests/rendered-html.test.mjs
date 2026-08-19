@@ -35,8 +35,19 @@ test("server-renders all three Raster Terrain Lab modes", async () => {
   assert.match(html, /Swiss cache grid/);
   assert.match(html, /Zürich/);
   assert.doesNotMatch(html, /Canton Bern/);
-  assert.match(html, /Bring a cloud raster into 3D/);
+  assert.match(html, /Build the ground from elevation COGs/);
   assert.match(html, /ArcGIS JS SDK/);
+});
+
+test("starts directly in the SwissALTI terrain mode", async () => {
+  const page = await readFile(
+    new URL("../app/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(page, /const DEFAULT_APP_MODE: AppMode = "terrain"/);
+  assert.match(page, /useRef<AppMode>\(DEFAULT_APP_MODE\)/);
+  assert.match(page, /useState<AppMode>\(DEFAULT_APP_MODE\)/);
 });
 
 test("keeps the experimental scene on web components and EPSG:2056", async () => {

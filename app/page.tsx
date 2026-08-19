@@ -42,6 +42,8 @@ type AppMode = "imagery" | "terrain" | "terrain-suisse-grid";
 type LoadState = "starting" | "loading" | "ready" | "error";
 type TerrainOverlayState = "idle" | "loading" | "ready" | "error";
 
+const DEFAULT_APP_MODE: AppMode = "terrain";
+
 function isTerrainMode(mode: AppMode) {
   return mode !== "imagery";
 }
@@ -369,7 +371,7 @@ export default function Home() {
   const sceneGenerationRef = useRef(0);
   const loadRequestRef = useRef(0);
   const activeUrlRef = useRef(DEMO_COG_URL);
-  const modeRef = useRef<AppMode>("imagery");
+  const modeRef = useRef<AppMode>(DEFAULT_APP_MODE);
   const opacityRef = useRef(88);
   const terrainOverlayOpacityRef = useRef(82);
   const terrainOverlayVisibleRef = useRef(true);
@@ -377,7 +379,7 @@ export default function Home() {
   const buildingsVisibleRef = useRef(false);
 
   const [sdkReady, setSdkReady] = useState(false);
-  const [mode, setMode] = useState<AppMode>("imagery");
+  const [mode, setMode] = useState<AppMode>(DEFAULT_APP_MODE);
   const [terrainRegionId, setTerrainRegionId] =
     useState<SwissAltiRegionId>(DEFAULT_SWISS_ALTI_REGION.id);
   const [cogUrl, setCogUrl] = useState(DEMO_COG_URL);
