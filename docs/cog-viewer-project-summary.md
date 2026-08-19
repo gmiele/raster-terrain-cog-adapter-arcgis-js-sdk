@@ -1,4 +1,4 @@
-### Experiment: Building 3D terrain directly from Cloud Optimized GeoTIFFs**
+# Experiment: Building 3D terrain directly from Cloud Optimized GeoTIFFs
 
 Following several conversations at the UC in San Diego—mainly with people working in earth observation, surveying, and defense—I wanted to explore a topic that came up repeatedly: the growing adoption of Cloud Optimized GeoTIFFs across the geospatial community.
 
@@ -8,7 +8,9 @@ This can reduce data transfer, avoid downloading complete raster files, and—in
 
 **What I built**
 
-I created an experimental 3D web viewer using the ArcGIS Maps SDK for JavaScript. It turns collections of SwissALTI3D elevation COGs around Zermatt and Zürich into continuous 3D terrain surfaces.
+I created an experimental 3D web viewer using the ArcGIS Maps SDK for JavaScript. It turns selectable collections of SwissALTI3D elevation COGs into continuous 3D terrain surfaces.
+
+The catalog covers Zermatt, Zürich, and the Graubünden municipalities of Chur, Parpan, Vaz/Obervaz, and Lenz. The four municipal catalogs are also available as one combined, de-duplicated catalog containing 245 unique COGs.
 
 **How it works**
 

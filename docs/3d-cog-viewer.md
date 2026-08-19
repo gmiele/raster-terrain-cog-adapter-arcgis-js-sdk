@@ -51,16 +51,22 @@ The adapter deliberately supports a narrow, consistent terrain dataset. Every ac
 
 These constraints are crucial. Because all sources use the same coordinate system, resolution, and grid alignment, the application can compose them without a reprojection step.
 
-The current catalog contains four selectable regions:
+The current application contains eight selectable catalog entries. Seven are independently defined source catalogs, and the eighth combines the four Graubünden municipal catalogs into one de-duplicated coverage:
 
 - Zermatt: 298 COGs from 2024.
 - Zürich: 124 COGs from 2019 and 2020.
-- Canton Bern: 6,380 COGs from 2021 and 2025.
+(- Canton Bern: 6,380 COGs from 2021 and 2025. not available, atm.)
 - Chur: 114 COGs from 2023.
+- Parpan: 71 COGs from 2023.
+- Vaz/Obervaz: 65 COGs from 2023.
+- Lenz: 40 COGs from 2023.
+- Chur + Parpan + Vaz/Obervaz + Lenz: 245 unique COGs from 2023.
 
 ## 1. Building and querying the COG catalog
 
 The catalog stores each COG's URL and its expected extent. SwissALTI tile ID `2610-1092`, for example, covers easting 2,610,000–2,611,000 and northing 1,092,000–1,093,000 in EPSG:2056.
+
+The combined Graubünden entry is assembled from the Chur, Parpan, Vaz/Obervaz, and Lenz catalogs. Sources shared by municipalities are de-duplicated by cache key. The composite builder also rejects conflicting source files assigned to the same kilometre-grid coordinate.
 
 The production code constructs the source record instead of repeating full URLs:
 
@@ -162,7 +168,7 @@ The application validates more than the shortened sample shows. It also checks t
 
 ### On-demand source cache
 
-The catalog can contain hundreds of COGs, but the application does not open all of them during startup.
+One catalog can contain hundreds of COGs, but the application does not open all of them during startup.
 
 - The first request for a COG creates and loads its hidden `ImageryTileLayer`.
 - Later requests reuse the same layer.

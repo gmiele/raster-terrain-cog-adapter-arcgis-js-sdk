@@ -21,7 +21,7 @@ This project tests that access model in two related scenarios:
 
 - Direct display of preset or user-provided imagery COGs.
 - Browser-side terrain composition from 0.5 m swissALTI3D elevation COGs.
-- Four selectable terrain catalogs: Zermatt, Zürich, Canton Bern, and Chur.
+- Eight selectable terrain catalogs: Zermatt, Zürich, Canton Bern, four individual Graubünden municipalities, and one combined four-municipality catalog.
 - A custom ArcGIS `BaseElevationLayer` that translates terrain-tile requests into COG pixel-window reads.
 - On-demand source loading, bounded concurrency, caching, and preservation of no-data areas.
 - A local Swiss LV95 scene in EPSG:2056 without coordinate reprojection or fallback world elevation.
@@ -65,6 +65,12 @@ The application currently catalogs:
 | Zürich | 124 | 2019–2020 |
 | Canton Bern | 6,380 | 2021 and 2025 |
 | Chur | 114 | 2023 |
+| Parpan | 71 | 2023 |
+| Vaz/Obervaz | 65 | 2023 |
+| Lenz | 40 | 2023 |
+| Chur + Parpan + Vaz/Obervaz + Lenz | 245 unique COGs | 2023 |
+
+The combined Graubünden catalog reuses the four municipal catalogs and de-duplicates overlapping COGs, so its 245 unique sources are fewer than the sum of the four individual counts.
 
 Source attribution: **Federal Office of Topography swisstopo**. See the [swisstopo terms of use for free geodata and geoservices](https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices).
 
